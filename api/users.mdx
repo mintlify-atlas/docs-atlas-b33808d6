@@ -1,0 +1,135 @@
+---
+title: "Users Object — Iterate the User Pool in sb0t Scripts"
+sidebarTitle: "Users"
+description: "API reference for the Users static object in sb0t scripts. Iterate local, linked, banned, and historical user records."
+---
+
+`Users` is a static singleton that provides iterator methods over different slices of the server's user pool. Rather than returning arrays, each method accepts a **callback function** and invokes it once per matching record — the same pattern as `Array.prototype.forEach`. This design avoids creating heavyweight JavaScript arrays for large populations and keeps iteration logic in C#, where it is safe to execute under locks. The four iterators cover locally connected users, users from linked leaf servers, the active ban list, and the full join-history log for the current server session.
+
+<Note>
+  `Users.local()` iterates **only** users who are directly connected to this server. Users who joined via a linked leaf server are not included. Use `Users.linked()` separately, or call both iterators, to cover the full visible population.
+</Note>
+
+---
+
+## Methods
+
+<ParamField path="Users.local(fn)" type="function">
+  Calls `fn(user)` once for every **locally** connected user (Ares and web clients). The `user` argument is a full [`User`](/api/user) object.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `User` object for each local user. |
+</ParamField>
+
+<ParamField path="Users.linked(fn)" type="function">
+  Calls `fn(user)` once for every user who is connected via a **linked leaf server**. This iterator only yields results when this server is operating in hub mode and at least one leaf is connected. The `user` argument is a full [`User`](/api/user) object.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `User` object for each linked user. |
+</ParamField>
+
+<ParamField path="Users.banned(fn)" type="function">
+  Calls `fn(bannedUser)` once for each entry in the current ban list. The `bannedUser` argument is a `BannedUser` object with the following properties:
+
+  | Property | Type | Description |
+  |----------|------|-------------|
+  | `name` | string | The username at the time of the ban. |
+  | `version` | string | The Ares client version string. |
+  | `guid` | string | The banned client's GUID. |
+  | `externalIp` | string | The banned external IP address. |
+  | `localIp` | string | The banned local IP address. |
+  | `port` | int | The data port at ban time. |
+
+  `BannedUser` also exposes an `unban()` method that removes the entry from the ban list immediately.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `BannedUser` object for each ban entry. |
+</ParamField>
+
+<ParamField path="Users.records(fn)" type="function">
+  Calls `fn(record)` once for each user that has connected to the server during the **current session** (including users who have since disconnected). This is useful for building audit logs or retrospective lookups. The `record` argument is a `Record` object with the following properties:
+
+  | Property | Type | Description |
+  |----------|------|-------------|
+  | `name` | string | The username at join time. |
+  | `joinTime` | number | Unix timestamp when the user joined. |
+  | `externalIp` | string | External IP address. |
+  | `localIp` | string | Local IP address. |
+  | `dns` | string | DNS hostname. |
+  | `version` | string | Ares client version string. |
+  | `port` | int | Data port. |
+  | `guid` | string | Client GUID. |
+
+  `Record` also exposes a `ban()` method that adds the record's IP/GUID to the ban list.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `Record` object for each session record. |
+</ParamField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Count local users
+function onChat(user, text) {
+  if (text === "!count") {
+    var count = 0;
+    Users.local(function(u) { count++; });
+    print(user, "Local users: " + count);
+  }
+}
+```
+
+```javascript List all banned users
+function onChat(user, text) {
+  if (text === "!bans" && user.level >= 2) {
+    var found = false;
+    Users.banned(function(b) {
+      print(user, b.name + " — " + b.externalIp + " (" + b.guid + ")");
+      found = true;
+    });
+    if (!found) print(user, "No active bans.");
+  }
+}
+```
+
+```javascript Find a user by IP across local and linked pools
+function findByIP(ip) {
+  var match = null;
+
+  Users.local(function(u) {
+    if (u.externalIp === ip) match = u;
+  });
+
+  if (!match) {
+    Users.linked(function(u) {
+      if (u.externalIp === ip) match = u;
+    });
+  }
+
+  return match;
+}
+```
+
+```javascript Ban a user by inspecting session records
+function onChat(user, text) {
+  if (text.startsWith("!recordban ") && user.level >= 2) {
+    var target = text.slice(11).trim().toLowerCase();
+
+    Users.records(function(r) {
+      if (r.name.toLowerCase() === target) {
+        r.ban();
+        print(user, "Banned record for: " + r.name + " / " + r.externalIp);
+      }
+    });
+  }
+}
+```
+
+</CodeGroup>

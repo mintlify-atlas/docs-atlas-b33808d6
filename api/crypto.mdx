@@ -1,0 +1,477 @@
+---
+title: "Crypto Object — Hashing Utilities in sb0t Scripts"
+sidebarTitle: "Crypto"
+description: "API reference for the Crypto static object in sb0t scripts. Compute MD5 and SHA-1 hashes of strings, with hex and byte-array result access."
+---
+
+The `Crypto` static object provides cryptographic hash functions for use in sb0t scripts. It is useful for fingerprinting content, generating tokens, verifying data integrity, or producing checksums for storage and comparison.
+
+<Note>
+  MD5 and SHA-1 are not considered cryptographically secure for modern systems. Do not use these functions for password hashing or security-sensitive operations. They are appropriate for checksums, fingerprinting, and non-security content identifiers.
+</Note>
+
+---
+
+## Crypto
+
+### `Crypto.md5hash(text)`
+
+Computes the MD5 hash of a UTF-8 encoded string and returns a `CryptoResult` object.
+
+<ParamField body="text" type="string" required>
+  The input string to hash. Encoded as UTF-8 before hashing.
+</ParamField>
+
+**Returns:** `CryptoResult` — an object exposing the hash in multiple formats. Returns `null` if `text` is `null` or `undefined`.
+
+---
+
+### `Crypto.sha1hash(text)`
+
+Computes the SHA-1 hash of a UTF-8 encoded string and returns a `CryptoResult` object.
+
+<ParamField body="text" type="string" required>
+  The input string to hash. Encoded as UTF-8 before hashing.
+</ParamField>
+
+**Returns:** `CryptoResult` — an object exposing the hash in multiple formats. Returns `null` if `text` is `null` or `undefined`.
+
+---
+
+## CryptoResult Object
+
+Both `Crypto.md5hash()` and `Crypto.sha1hash()` return a `CryptoResult` instance with the following methods:
+
+### `.toHex()`
+
+Returns the hash as an **uppercase** hexadecimal string (e.g. `"D41D8CD98F00B204E9800998ECF8427E"`).
+
+**Returns:** `string`
+
+---
+
+### `.toBase64()`
+
+Returns the hash as a **Base64-encoded** string.
+
+**Returns:** `string`
+
+---
+
+### `.toArray()`
+
+Returns the raw hash bytes as a JavaScript **array of integers** (0–255), one element per byte.
+
+**Returns:** `Array<number>`
+
+---
+
+### Examples
+
+<CodeGroup>
+
+```javascript MD5 Hash to Hex
+var result = Crypto.md5hash("hello world");
+room.say("MD5: " + result.toHex());
+// e.g. "MD5: 5EB63BBBE01EEED093CB22BB8F5ACDC3"
+```
+
+```javascript SHA-1 Hash to Base64
+var result = Crypto.sha1hash("hello world");
+room.say("SHA1 (base64): " + result.toBase64());
+```
+
+```javascript Hash to Byte Array
+var result = Crypto.md5hash("fingerprint-this");
+var bytes = result.toArray();
+room.say("First byte: " + bytes[0]);
+```
+
+</CodeGroup>
+
+---
+
+## Base64
+
+The `Base64` static object encodes and decodes strings using standard Base64 encoding. Input and output use UTF-8 text.
+
+### `Base64.encode(text)`
+
+Encodes a string as Base64.
+
+<ParamField body="text" type="string" required>
+  The plain-text string to encode.
+</ParamField>
+
+**Returns:** `string` — the Base64-encoded result. Returns `null` if `text` is `null` or `undefined`.
+
+---
+
+### `Base64.decode(text)`
+
+Decodes a Base64-encoded string back to plain text.
+
+<ParamField body="text" type="string" required>
+  The Base64-encoded string to decode.
+</ParamField>
+
+**Returns:** `string` — the decoded UTF-8 string, or `null` if the input is not valid Base64.
+
+<CodeGroup>
+
+```javascript Encode and Decode
+var encoded = Base64.encode("hello from sb0t");
+room.say("Encoded: " + encoded);
+
+var decoded = Base64.decode(encoded);
+room.say("Decoded: " + decoded);
+```
+
+</CodeGroup>
+
+---
+
+## Zip
+
+The `Zip` static object compresses and decompresses strings using the server's built-in compression engine. The string is encoded as UTF-8 before compression and decoded from UTF-8 after decompression.
+
+### `Zip.compress(text)`
+
+Compresses a string.
+
+<ParamField body="text" type="string" required>
+  The string to compress.
+</ParamField>
+
+**Returns:** `string` — the compressed data as a string using the system default encoding. Returns `null` on failure or if `text` is `undefined`.
+
+---
+
+### `Zip.uncompress(text)`
+
+Decompresses a previously compressed string.
+
+<ParamField body="text" type="string" required>
+  The compressed string (as returned by `Zip.compress()`).
+</ParamField>
+
+**Returns:** `string` — the decompressed UTF-8 string. Returns `null` on failure.
+
+<CodeGroup>
+
+```javascript Compress and Uncompress
+var compressed = Zip.compress("some long repeated text text text text");
+var original   = Zip.uncompress(compressed);
+room.say("Restored: " + original);
+```
+
+</CodeGroup>
+
+---
+
+## Hashlink
+
+The `Hashlink` static object encodes and decodes Ares `arlnk://` room links. These links embed a room name, IP address, and port into a compact encrypted string that Ares clients can use to connect directly to a room.
+
+### `Hashlink.encode(obj)`
+
+Encodes a room descriptor object into an `arlnk://` link string.
+
+<ParamField body="obj" type="object" required>
+  A plain JavaScript object with the following properties:
+
+  <ParamField body="ip" type="string" required>
+    The external IP address of the room (e.g. `"1.2.3.4"`).
+  </ParamField>
+  <ParamField body="port" type="number" required>
+    The data port of the room (1–65535).
+  </ParamField>
+  <ParamField body="name" type="string" required>
+    The display name of the room.
+  </ParamField>
+</ParamField>
+
+**Returns:** `string` — the full `arlnk://...` link, or `null` on error.
+
+---
+
+### `Hashlink.decode(link)`
+
+Decodes an `arlnk://` link string into a room descriptor object.
+
+<ParamField body="link" type="string" required>
+  The `arlnk://` hashlink string to decode.
+</ParamField>
+
+**Returns:** `HashlinkResult` — an object with `name` (string), `ip` (string), and `port` (number) properties. Returns `null` if the link is invalid.
+
+<CodeGroup>
+
+```javascript Encode a Hashlink
+var link = Hashlink.encode({ ip: "1.2.3.4", port: 1337, name: "My Room" });
+room.say("Join here: " + link);
+```
+
+```javascript Decode a Hashlink
+var info = Hashlink.decode("arlnk://...");
+if (info) {
+    room.say("Room: " + info.name + " at " + info.ip + ":" + info.port);
+}
+```
+
+</CodeGroup>
+
+---
+
+## Spelling
+
+The `Spelling` static object provides spell-checking utilities backed by the server's built-in spell checker.
+
+### `Spelling.check(text)`
+
+Checks the spelling of a block of text and returns a corrected version.
+
+<ParamField body="text" type="string" required>
+  The text to check.
+</ParamField>
+
+**Returns:** `string` — the spell-corrected text, or `null` if `text` is `undefined`.
+
+---
+
+### `Spelling.suggest(word)`
+
+Returns a collection of spelling suggestions for a single word.
+
+<ParamField body="word" type="string" required>
+  The word to get suggestions for.
+</ParamField>
+
+**Returns:** `SpellingSuggestionCollection` — an array-like object with a `length` property and numeric indexes, each containing a suggested replacement string.
+
+---
+
+### `Spelling.confirm(word)`
+
+Checks whether a single word is spelled correctly.
+
+<ParamField body="word" type="string" required>
+  The word to check.
+</ParamField>
+
+**Returns:** `boolean` — `true` if the word is correct, `false` otherwise.
+
+<CodeGroup>
+
+```javascript Check and Correct Text
+function onPublicText(user, msg) {
+    if (!Spelling.confirm(msg)) {
+        var fixed = Spelling.check(msg);
+        room.say("Did you mean: " + fixed + "?");
+    }
+}
+```
+
+```javascript Get Suggestions
+var suggestions = Spelling.suggest("helo");
+for (var i = 0; i < suggestions.length; i++) {
+    room.say("Suggestion: " + suggestions[i]);
+}
+```
+
+</CodeGroup>
+
+---
+
+## Registry
+
+The `Registry` static object provides persistent key-value storage for scripts using the Windows Registry. All values are stored under `HKEY_CURRENT_USER\Software\sb0t\<appname>\scripting\<scriptname>`, scoped to the current script.
+
+<Note>
+  Registry storage is Windows-only and scoped to the current user account running sb0t. Values survive server restarts. Only string, integer, and floating-point values can be stored.
+</Note>
+
+### `Registry.exists(key)`
+
+Checks whether a named value exists in the registry for this script.
+
+<ParamField body="key" type="string" required>
+  The registry value name to check.
+</ParamField>
+
+**Returns:** `boolean`
+
+---
+
+### `Registry.getValue(key)`
+
+Reads a stored value from the registry.
+
+<ParamField body="key" type="string" required>
+  The registry value name to read.
+</ParamField>
+
+**Returns:** `string` — the stored value, or `null` if the key does not exist.
+
+---
+
+### `Registry.setValue(key, value)`
+
+Writes a value to the registry. Accepts strings, integers, and floating-point numbers.
+
+<ParamField body="key" type="string" required>
+  The registry value name to write.
+</ParamField>
+<ParamField body="value" type="string | number" required>
+  The value to store.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success, `false` if the value type is unsupported.
+
+---
+
+### `Registry.deleteValue(key)`
+
+Deletes a named value from the registry.
+
+<ParamField body="key" type="string" required>
+  The registry value name to delete.
+</ParamField>
+
+**Returns:** `boolean` — `true` if deleted, `false` if the key did not exist.
+
+---
+
+### `Registry.getKeys()`
+
+Returns all stored value names for the current script.
+
+**Returns:** `RegistryKeyCollection` — an array-like object with a `length` property and numeric indexes, each containing a key name string.
+
+---
+
+### `Registry.clear()`
+
+Deletes all registry values stored for the current script.
+
+**Returns:** `boolean` — `true` on success.
+
+<CodeGroup>
+
+```javascript Store and Retrieve a Value
+Registry.setValue("welcomeCount", 0);
+
+function onUserJoin(user) {
+    var count = parseInt(Registry.getValue("welcomeCount")) + 1;
+    Registry.setValue("welcomeCount", count);
+    room.say("Welcome #" + count + ": " + user.name);
+}
+```
+
+```javascript Enumerate All Keys
+var keys = Registry.getKeys();
+for (var i = 0; i < keys.length; i++) {
+    room.say(keys[i] + " = " + Registry.getValue(keys[i]));
+}
+```
+
+</CodeGroup>
+
+---
+
+## File
+
+The `File` static object provides simple text file persistence for scripts. All file operations are sandboxed to the script's own `data/` subfolder inside the server's data directory. Filenames may not contain `..`, `/`, `\`, or spaces.
+
+<Note>
+  The data directory is automatically created on first write. Paths are strictly sandboxed — traversal sequences and directory separators are rejected.
+</Note>
+
+### `File.exists(filename)`
+
+Checks whether a file exists in the script's data folder.
+
+<ParamField body="filename" type="string" required>
+  The filename to check (no path separators or `..`).
+</ParamField>
+
+**Returns:** `boolean`
+
+---
+
+### `File.load(filename)`
+
+Reads the full text content of a file.
+
+<ParamField body="filename" type="string" required>
+  The filename to read.
+</ParamField>
+
+**Returns:** `string` — the file contents, or `null` if the file does not exist or the filename is invalid.
+
+---
+
+### `File.save(filename, content)`
+
+Writes a string to a file, replacing any existing content.
+
+<ParamField body="filename" type="string" required>
+  The filename to write.
+</ParamField>
+<ParamField body="content" type="string" required>
+  The text content to save. Written as UTF-8.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+### `File.append(filename, content)`
+
+Appends a string to a file. Creates the file if it does not exist.
+
+<ParamField body="filename" type="string" required>
+  The filename to append to.
+</ParamField>
+<ParamField body="content" type="string" required>
+  The text to append.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+### `File.kill(filename)`
+
+Deletes a file from the script's data folder.
+
+<ParamField body="filename" type="string" required>
+  The filename to delete.
+</ParamField>
+
+**Returns:** `boolean` — `true` if the file existed and was deleted, `false` otherwise.
+
+<CodeGroup>
+
+```javascript Save and Load a File
+File.save("greetings.txt", "Hello, world!");
+var content = File.load("greetings.txt");
+room.say(content);
+```
+
+```javascript Append to a Log File
+function onUserJoin(user) {
+    File.append("joinlog.txt", user.name + "\n");
+}
+```
+
+```javascript Check Before Reading
+if (File.exists("config.txt")) {
+    var cfg = File.load("config.txt");
+    room.say("Config loaded: " + cfg);
+} else {
+    File.save("config.txt", "default");
+}
+```
+
+</CodeGroup>

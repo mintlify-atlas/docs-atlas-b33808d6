@@ -1,0 +1,302 @@
+---
+title: "Global Functions Available to sb0t Scripts"
+sidebarTitle: "Global Functions"
+description: "Reference for all global JavaScript functions provided to sb0t scripts: user lookup, printing, sending messages, string helpers, and file inclusion."
+---
+
+Every script engine has a set of global functions injected into its scope from `JSGlobal.cs`. These functions are available at any time — inside event handlers, timers, or top-level script code — without any import or namespace prefix.
+
+---
+
+## User lookup
+
+### `user(nameOrId)`
+
+Find a currently connected local user by name or session ID.
+
+<ParamField body="nameOrId" type="string | number">
+  - **string** — matches first by exact name, then by name prefix. Must be at least 2 characters long.
+  - **number** — matches by the user's integer session ID (`user.id`). Linked users always have an ID of `-1` and cannot be looked up this way.
+</ParamField>
+
+**Returns:** `JSUser | null` — the matching user object, or `null` if not found.
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "greet") {
+        var found = user(args);   // look up by name prefix
+        if (found) {
+            print(found, "Hello, " + found.name + "!");
+        } else {
+            print(user, "User not found: " + args);
+        }
+    }
+}
+```
+
+<Note>
+`user()` searches only local (non-linked) users. Users connected through a linked leaf server are not in the local pool and cannot be found with this function. Use `Link.leaves()` or a leaf's `.user()` method to reach them.
+</Note>
+
+---
+
+## Printing messages
+
+### `print(message)`
+
+Send a system-style message to all currently connected local users in all vrooms.
+
+<ParamField body="message" type="any">
+  The value to print. Booleans are coerced to `"true"` / `"false"`. `null` and `undefined` are silently ignored.
+</ParamField>
+
+```javascript
+print("The server will restart in 5 minutes.");
+```
+
+---
+
+### `print(vroom, message)`
+
+Send a message only to users currently inside a specific virtual room.
+
+<ParamField body="vroom" type="number">
+  The vroom number (0–65535). Vroom `0` is the default main room.
+</ParamField>
+<ParamField body="message" type="any">
+  The message text.
+</ParamField>
+
+```javascript
+print(0, "Main room announcement.");
+print(42, "This message only goes to vroom 42.");
+```
+
+---
+
+### `print(user, message)`
+
+Send a message privately to a single user (displayed as a system line, not a PM).
+
+<ParamField body="user" type="JSUser">
+  The target user object.
+</ParamField>
+<ParamField body="message" type="any">
+  The message text.
+</ParamField>
+
+```javascript
+function onJoin(u) {
+    print(u, "Welcome, " + u.name + "!");
+}
+```
+
+---
+
+## Sending spoofed messages
+
+### `sendPM(user, sender, text)`
+
+Send a private message to a user that appears to come from a custom sender name. This does not require `sender` to be a real user in the room.
+
+<ParamField body="user" type="JSUser">
+  The recipient user object.
+</ParamField>
+<ParamField body="sender" type="string">
+  The display name that will appear as the PM sender.
+</ParamField>
+<ParamField body="text" type="string">
+  The PM body text.
+</ParamField>
+
+```javascript
+function onJoin(user) {
+    sendPM(user, Room.botName, "Hello! Type /help for available commands.");
+}
+```
+
+---
+
+### `sendText(user, sender, text)`
+
+Send a public-style chat line to a single user only, appearing as if `sender` said it. Other users in the room do not see this message.
+
+<ParamField body="user" type="JSUser">
+  The recipient user object.
+</ParamField>
+<ParamField body="sender" type="string">
+  The display name to show as the speaker.
+</ParamField>
+<ParamField body="text" type="string">
+  The message text.
+</ParamField>
+
+```javascript
+// Show a fake "MOTD" line only to the joining user
+function onJoin(user) {
+    sendText(user, "[MOTD]", "Today's topic: " + Room.topic);
+}
+```
+
+---
+
+### `sendEmote(user, sender, text)`
+
+Send an emote-style action line to a single user only, appearing as if `sender` performed it.
+
+<ParamField body="user" type="JSUser">
+  The recipient user object.
+</ParamField>
+<ParamField body="sender" type="string">
+  The display name to show as the emote actor.
+</ParamField>
+<ParamField body="text" type="string">
+  The emote text (typically starts with the sender's name, e.g. `"waves hello"`).
+</ParamField>
+
+```javascript
+sendEmote(user, Room.botName, "waves hello at " + user.name);
+```
+
+---
+
+## File inclusion
+
+### `include(filename)`
+
+Load and execute another `.js` file from the same script folder. The file is executed in the same engine scope, so any functions or variables it defines become available globally within the script.
+
+<ParamField body="filename" type="string">
+  Filename relative to the script's folder. Must end in `.js` and must not contain `..`, `/`, `\`, or spaces.
+</ParamField>
+
+```javascript
+// In greeter/greeter.js
+include("commands.js");
+include("utils.js");
+```
+
+---
+
+### `includeAll()`
+
+Execute every `.js` file in the current script's folder, except the entry-point file itself. Files are included in the order returned by the filesystem.
+
+```javascript
+// At the top of your entry-point file, pull in all helpers at once
+includeAll();
+```
+
+---
+
+## String utilities
+
+### `stripColors(text)`
+
+Remove Ares color and formatting codes from a string. Strips `\x03nn`, `\x05nn` (color codes with two-digit values), and the bare control characters `\x06`, `\x07`, `\x09`, and `\x02`.
+
+<ParamField body="text" type="string">
+  The raw string that may contain color codes.
+</ParamField>
+
+**Returns:** `string | null` — the cleaned string. Returns `null` if `text` is `null` or `undefined`.
+
+```javascript
+function onTextBefore(user, text) {
+    var clean = stripColors(text).toLowerCase();
+    if (clean.indexOf("spam") !== -1) return "";
+    return text;
+}
+```
+
+---
+
+### `escapeUtf(text)`
+
+Escape all non-alphanumeric characters in a string to `\xHH` (for values up to `0xFF`) or `\uHHHH` (for values above `0xFF`) sequences. Alphanumeric ASCII characters (`A–Z`, `a–z`, `0–9`) are left unchanged.
+
+<ParamField body="text" type="any">
+  The value to escape. Converted to string first.
+</ParamField>
+
+**Returns:** `string | null` — the escaped string, or `null` if `text` is `undefined`.
+
+```javascript
+var safe = escapeUtf("héllo wörld");
+// "h\xE9llo\x20w\xF6rld"
+```
+
+---
+
+### `byteLength(text)`
+
+Return the UTF-8 encoded byte length of a string. Useful for checking whether a string will exceed protocol byte limits.
+
+<ParamField body="text" type="any">
+  The value to measure. Converted to string first.
+</ParamField>
+
+**Returns:** `number` — byte count, or `-1` if `text` is `undefined`.
+
+```javascript
+function onTextBefore(user, text) {
+    if (byteLength(text) > 512) {
+        print(user, "Your message is too long.");
+        return "";
+    }
+    return text;
+}
+```
+
+---
+
+## Diagnostics and metadata
+
+### `tickCount()`
+
+Return the current server tick count in milliseconds (the number of milliseconds since the server process started). Useful for measuring elapsed time.
+
+**Returns:** `number`
+
+```javascript
+var start = tickCount();
+
+function onTimer() {
+    if (tickCount() - start >= 60000) {
+        print("One minute has passed!");
+        start = tickCount();
+    }
+}
+```
+
+---
+
+### `scriptName()`
+
+Return the name of the currently executing script (the folder/entry-point name, e.g. `"greeter"` or `"room"`).
+
+**Returns:** `string`
+
+```javascript
+function onLoad() {
+    print("Script loaded: " + scriptName());
+}
+```
+
+---
+
+### `clrName(value)`
+
+Return the full CLR (Common Language Runtime) type name of a value. This is a debugging utility for inspecting what .NET type an object has when bridged into JavaScript.
+
+<ParamField body="value" type="any">
+  Any value.
+</ParamField>
+
+**Returns:** `string | null` — e.g. `"scripting.Objects.JSUser"`, or `null` if `value` is `undefined`.
+
+```javascript
+function onJoin(user) {
+    print(user, clrName(user));  // "scripting.Objects.JSUser"
+}
+```

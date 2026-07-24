@@ -1,0 +1,155 @@
+---
+title: "Avatars, Profiles, and Custom Fonts in sb0t"
+sidebarTitle: "Avatars & Profiles"
+description: "How sb0t handles user avatars, personal messages, custom fonts, scribbles, and URL tags for Ares and web clients."
+---
+
+Ares desktop clients carry a rich set of per-user profile data — a small avatar image, a personal status message, a custom font style, and more. sb0t tracks all of this state per connected user, synchronises it to joining clients, relays updates in real time, and exposes it for scripting. Web clients (ib0t) that negotiate extended protocol (`>= 2000`) receive the same profile data over WebSocket.
+
+## Avatars
+
+### User Avatars
+
+Each connected user has an `IUser.Avatar` property (`byte[]`) holding their raw JPEG avatar image bytes. When a new user joins, every other client in the same `Vroom` receives the avatar:
+
+- **Ares clients** receive a `TCPOutbound.Avatar()` TCP packet
+- **Web clients** (extended mode) receive a `WebOutbound.AvatarTo()` packet containing the image Base64-encoded
+
+The `Avatars.CheckAvatars(time)` method runs every **2 seconds** inside the server loop (triggered by the `fast_ping_timer`). If a default avatar is configured and a user has not yet provided their own avatar and their `AvatarTimeout` expired more than 10 seconds ago, the default avatar is applied automatically:
+
+```csharp
+UserPool.AUsers.ForEachWhere(x =>
+{
+    x.Avatar = default_avatar;
+    x.OrgAvatar = default_avatar;
+    x.AvatarReceived = true;
+    x.DefaultAvatar = true;
+},
+x => !x.AvatarReceived &&
+     x.LoggedIn &&
+     time > (x.AvatarTimeout + 10000));
+```
+
+### Server (Bot) Avatar
+
+`Avatars.UpdateServerAvatar(byte[])` sets the bot's avatar. It is immediately broadcast to all logged-in Ares clients via `TCPOutbound.BotAvatar()`. Web clients joining later receive it via `Avatars.Server(ib0tClient)`. If no server avatar is set, a clear packet is sent instead.
+
+All avatars — user-supplied and server-supplied — are scaled to **48 × 48 pixels** JPEG at quality 69 before being stored, via `Avatars.Scale()`, ensuring consistent size across all clients.
+
+### `IUser.RestoreAvatar()`
+
+Calling `IUser.RestoreAvatar()` from a script resets a user's avatar to their original (`OrgAvatar`) and re-broadcasts it to the room, useful after a script has temporarily replaced it.
+
+## Personal Messages
+
+`IUser.PersonalMessage` (`String`) is a short status line that appears beneath a user's name in supporting Ares clients. It is synchronised the same way as avatars:
+
+- Set by the client via the standard Ares personal-message packet
+- Broadcast to all users in the same vroom on join and on change
+- Web clients in extended mode receive `PERSMSG` packets: `PERSMSG:<namelength>,<textlength>:<name><text>`
+
+Scripts can read and write this property directly:
+
+```csharp
+// Read
+string status = user.PersonalMessage;
+
+// Write (triggers broadcast automatically)
+user.PersonalMessage = "Away for lunch";
+```
+
+## Custom Fonts
+
+Ares supports per-user coloured display names and coloured message text. sb0t models this through `IFont` (interface) and `AresFont` (concrete implementation):
+
+```csharp
+class AresFont : IFont
+{
+    public bool Enabled { get; set; }
+    public String NameColor { get; set; }   // HTML hex colour, e.g. "#FF0000"
+    public String TextColor { get; set; }   // HTML hex colour
+    public String FontName { get; set; }    // Font family name
+    public bool IsEmote { get; set; }
+    public byte oldN { get; set; }          // Legacy Ares name colour index
+    public byte oldT { get; set; }          // Legacy Ares text colour index
+    public byte size { get; set; }          // Font size
+}
+```
+
+`IUser.Font` exposes the `IFont` interface. When a web client in extended mode joins, each logged-in Ares user whose `Font.Enabled` is `true` has their font data relayed as a `FONT` packet:
+
+```
+FONT:<namelength>,<oldN length>,<oldT length>:<name><oldN><oldT>
+```
+
+<Note>
+Custom font rendering in the web client is limited to the legacy `oldN` and `oldT` colour-index values. The full `NameColor`/`TextColor` hex strings are available to scripts via `IFont` but are not forwarded to web clients in the current protocol.
+</Note>
+
+## Custom Names
+
+`IUser.CustomName` (`String`) is an admin-assigned display name override. When set, the server substitutes it for the user's real name in public text and emote packets dispatched to clients that do not have `BlockCustomNames` enabled. Scripts and the hub link can set this remotely:
+
+```csharp
+user.CustomName = "[VIP] Alice";   // replaces display name in chat
+user.CustomName = String.Empty;    // clears override, restores real name
+```
+
+## Virtual Rooms (Vrooms)
+
+`IUser.Vroom` (`ushort`) places a user into an isolated sub-room. Users with different `Vroom` values do not see each other's joins, parts, or messages. The main room is vroom `0`. Scripts can move users between vrooms:
+
+```csharp
+user.Vroom = 1;   // move to private sub-room 1
+user.Vroom = 0;   // return to the main room
+```
+
+`IUser.SetLevel(ILevel level)` promotes or demotes a user through the four admin tiers:
+
+| `ILevel` | Byte value | Role |
+|---|---|---|
+| `Regular` | `0` | Standard user |
+| `Moderator` | `1` | Can kick, muzzle, etc. |
+| `Administrator` | `2` | Extended admin powers |
+| `Host` | `3` | Room owner, full permissions |
+
+## Cloaking
+
+`IUser.Cloaked` (`bool`) hides a user from the visible user list while they remain connected. Other users receive a `PART` packet when cloaking is applied, as if the user left, but the underlying socket stays open. Cloaked users cannot receive private messages from non-cloaked users — senders receive an `OFFLINE` response instead.
+
+```csharp
+user.Cloaked = true;    // hide from user list
+user.Cloaked = false;   // re-appear (sends a JOIN to the room)
+```
+
+## Scribbles
+
+`IUser.Scribble(string sender, byte[] img, int height)` sends a drawable scribble image to a user if their client supports it. For Ares clients this requires `CustomClient` to be `true`. For web clients it requires the extended protocol flag. The scribble is sent in two parts — a `SCRIBBLE_HEAD` packet carrying sender name and image dimensions, followed by one or more `SCRIBBLE_BLOCK` packets carrying the image data chunks.
+
+## URL Tags
+
+`IUser.URL(string address, string text)` sets a clickable hyperlink tag displayed beneath a user's name in the client UI. The `URL` packet format is:
+
+```
+URL:<addresslength>,<textlength>:<address><text>
+```
+
+URL tags are also broadcast at login via `WebOutbound.UrlTo()` using the room-wide link configured in `Settings.Get<String>("link", "url")` and `Settings.Get<String>("text", "url")`.
+
+## Nudges
+
+`IUser.Nudge(string sender)` sends a nudge notification to the target user. Nudges produce a screen-shake or sound effect in supporting Ares desktop clients. They are not delivered to web clients — only users connected with a standard Ares desktop client that supports the nudge packet will receive it.
+
+## AvatarPMManager
+
+`AvatarPMManager` (in `commands`) provides per-session tracking of custom avatar and private-message state for admin operations:
+
+- `AddAvatar(IUser)` — records that a custom avatar was applied to this user's GUID
+- `CanAvatar(IUser)` — returns `true` if no custom avatar has been applied yet this session
+- `AddPM(IUser, string)` / `GetPM(IUser)` — stores and retrieves a custom per-user PM text keyed by GUID
+
+This data is in-memory only and is reset with `AvatarPMManager.Reset()` on server start.
+
+<Note>
+Scribbles, nudges, and full font customisation are features of the Ares desktop client protocol. Web clients receive a subset: avatars (Base64-encoded JPEG), personal messages, and basic font colour indices. Older Ares client versions may not support all of these features — sb0t silently drops packets for features the target client does not advertise support for.
+</Note>

@@ -1,0 +1,102 @@
+---
+title: "Web Chat (ib0t) — Browser-Based Access to Your Room"
+sidebarTitle: "Web Chat"
+description: "Enable sb0t's built-in HTML5 WebSocket web client so browser users can join your Ares room without installing the Ares desktop app."
+---
+
+sb0t includes a built-in browser chat interface called **ib0t** — a WebSocket-based server that runs alongside the main Ares TCP listener. When enabled, users can open your room's URL in any modern browser and appear as fully-fledged room participants, right alongside Ares desktop clients, without installing anything.
+
+## How ib0t Works
+
+When a browser makes an HTTP connection to sb0t's port, `ServerCore.ServiceWebSockets()` detects the incoming HTTP upgrade request. The server parses the WebSocket handshake headers, computes the correct reply using `WebSockets.Html5HandshakeReplyPacket()`, and upgrades the connection to a persistent WebSocket session.
+
+Once the handshake is complete, the client and server exchange plain-text messages using a structured `ident:args` protocol. Every message from the browser is split at the first colon: everything before it is the **ident** (command name) and everything after is the **args** (payload). `WebProcessor.Evaluate()` dispatches each message to the appropriate handler:
+
+```
+LOGIN:<lengths>:<name><guid><version>...
+PUBLIC:<lengths>:<name><text>
+EMOTE:<lengths>:<name><text>
+PM:<lengths>:<name><text>
+COMMAND:<text>
+PING:
+IGNORE:<lengths>:<name><flag>
+LAG:<data>
+```
+
+Outbound messages sent **to** the browser follow the same scheme, implemented in `WebOutbound`:
+
+```
+ACK:<length>:<name>
+JOIN:<lengths>:<name><level>
+PART:<length>:<name>
+PUBLIC:<lengths>:<name><text>
+EMOTE:<lengths>:<name><text>
+PM:<lengths>:<sender><text>
+NOSUCH:<length>:<text>
+USERLIST:<lengths>:<name><level>
+USERLIST_END:
+TOPIC_FIRST:<length>:<text>
+TOPIC:<length>:<text>
+URL:<lengths>:<address><tag>
+AVATAR:<lengths>:<name><base64image>
+PERSMSG:<lengths>:<name><text>
+FONT:<lengths>:<name><namecolor><textcolor>
+UPDATE:<lengths>:<name><level>
+```
+
+Web client users are stored in `UserPool.WUsers` and share the same virtual room partitions (`Vroom`) as Ares desktop users. A web user joining is broadcast to all desktop clients via `TCPOutbound.Join()`, and all desktop clients are broadcast to the newly-arrived web user via `WebOutbound.UserlistItemTo()`.
+
+## Enabling Web Chat
+
+In the sb0t GUI, navigate to **Settings → Web** and set `enabled` to `true` (`Settings.Get<bool>("enabled", "web")`). The web client shares the same TCP port as the Ares listener — no separate port needs to be opened.
+
+<Tip>
+Make sure the port your server listens on is open in Windows Firewall (both inbound TCP and — if using room search — UDP). Since the Ares TCP listener and the WebSocket listener share the same port, a single firewall rule covers both Ares desktop clients and browser clients.
+</Tip>
+
+## Timeouts
+
+The main server loop enforces three connection deadlines, checked every 25 ms in `ServiceWebSockets()`:
+
+| Phase | Timeout | Behaviour |
+|---|---|---|
+| WebSocket handshake | **10 seconds** | Connection is dropped if the HTTP upgrade does not complete within 10 s of the socket being accepted |
+| Login | **15 seconds** | Connection is dropped if the client connects but never sends a `LOGIN` message within 15 s of the handshake completing |
+| Idle | **2 minutes** | A fully logged-in user is disconnected if no `PING` or other message is received for 120 s |
+
+## Channel Push
+
+Every **20 minutes**, `ChannelPusher.Push()` runs in a background thread to advertise the room to web-channel search nodes. It POSTs the server's local IP, port, room name, and topic to the configured channel-push URL:
+
+```csharp
+sb.Append("local=" + Settings.LocalIP);
+sb.Append("&port=" + Settings.Port);
+sb.Append("&name=" + Uri.EscapeDataString(Settings.Name));
+sb.Append("&topic=" + Uri.EscapeDataString(Settings.Topic));
+```
+
+The push URL is read from `Settings.Get<String>("url", "web")`. The initial push is fired immediately on server start (the timer is pre-subtracted by 20 minutes so the first tick fires at `time 0 + 1,200,000 ms`).
+
+## Extended Protocol Features
+
+Browser clients that report a protocol version `>= 2000` are flagged as `Extended`. Extended clients receive additional data at login that basic clients do not:
+
+- Avatars of existing users (`AVATAR` packets, image bytes Base64-encoded)
+- Personal messages of existing users (`PERSMSG` packets)
+- Font colour data of Ares users (`FONT` packets — `oldN` and `oldT` colour bytes from `AresFont`)
+- The bot's personal message (software version string)
+- The server avatar (if one is configured)
+
+## HTML Style Template
+
+<Note>
+The HTML template and CSS served to web clients is loaded from `%AppData%\sb0t\<app-name>\Style\`. You can customise the look of the chat interface by editing the files in that directory. Changes take effect for the next browser request without restarting the server.
+</Note>
+
+## Connection Limits and Flood Protection
+
+sb0t applies the same join-flood guard and per-IP limit to web clients as it does to Ares desktop clients:
+
+- **Maximum 3 connections per external IP** — a fourth connection attempt from the same IP is rejected with `RejectedMsg.TooManyClients`.
+- **Join flood detection** — repeated joins within a short window trigger `RejectedMsg.TooSoon`.
+- **Message flood control** — once logged in, every inbound `ident` is passed through `FloodControl.IsFlooding()`; detected floods fire `Events.Flooding()` and, if not cancelled, disconnect the user.

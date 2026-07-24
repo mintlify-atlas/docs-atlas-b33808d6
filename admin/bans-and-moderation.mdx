@@ -1,0 +1,246 @@
+---
+title: "Bans, Muzzles, and User Moderation in sb0t"
+sidebarTitle: "Bans & Moderation"
+description: "How to ban, muzzle, redirect, and quarantine users in sb0t. Covers IP bans, GUID bans, range bans, ASN bans, and muzzle timeouts."
+---
+
+sb0t gives administrators several overlapping tools for dealing with disruptive users: temporary bans, permanent bans, subnet/ASN bans, muzzles, quarantine, and cross-room redirects. Each mechanism stores its state in a separate file under the server's data directory so they survive restarts independently.
+
+## How Ban Matching Works
+
+Every ban check tests **both** the user's external IP address and their Ares GUID. A user cannot evade a ban by simply reconnecting, because both identifiers must clear:
+
+```csharp
+// BanSystem.IsBanned
+return list.Find(x =>
+    x.ExternalIP.Equals(client.ExternalIP) ||
+    x.Guid.Equals(client.Guid)) != null;
+```
+
+The same dual-check logic applies in `Bans.cs`, `Muzzles.cs`, and `RangeBans.cs`.
+
+## Standard Bans
+
+### Ban Durations
+
+Short-lived room bans (managed by `commands/Bans.cs`) use the `BanDuration` enum:
+
+```csharp
+enum BanDuration : uint
+{
+    Ten  = 600,   // 10 minutes (600 seconds)
+    Sixty = 3600  // 60 minutes (3600 seconds)
+}
+```
+
+The server's `Tick()` loop compares elapsed time against the duration and automatically unbans the user when it expires, printing a room notice using the `Timeouts` template:
+
+```csharp
+if ((time - m.Time) > (uint)m.Duration)
+{
+    list.RemoveAt(i);
+    Server.Print(Template.Text(Category.Timeouts, 2).Replace("+n", m.Name), true);
+    // ...unban pending user
+}
+```
+
+Bans are persisted to `bans.xml` in the server data path.
+
+### Permanent Bans (BanSystem)
+
+`core/BanSystem.cs` manages the persistent ban list stored in the SQLite database `banned.dat`. These bans have no expiry — they remain until an administrator explicitly removes one:
+
+```csharp
+// BanSystem — database schema
+CREATE TABLE bans (
+    name       TEXT NOT NULL,
+    version    TEXT NOT NULL,
+    guid       TEXT NOT NULL,
+    externalip TEXT NOT NULL,
+    localip    TEXT NOT NULL,
+    port       INT  NOT NULL,
+    ident      INT  NOT NULL
+);
+```
+
+Each entry stores the user's name, Ares version string, GUID, external IP, local IP, data port, and a unique numeric `ident` used to reference the ban when removing it.
+
+### Banning from a Script
+
+The scripting layer exposes `user.ban()` on the JS user object:
+
+```js
+// In a script event handler — ban a user and cancel their message
+function onPublicBefore(userobj, msg) {
+    if (msg.text === "forbidden phrase") {
+        userobj.ban();
+        msg.cancel = true;
+    }
+    return true;
+}
+```
+
+Calling `userobj.ban()` invokes `IUser.Ban()` directly; the owner account is protected and cannot be banned even via scripting.
+
+### Auto-Clearing Bans
+
+`BanSystem.AutoClearBans()` is called every 2 seconds from the server loop. When the `auto_ban_clear_enabled` setting is `true`, it computes:
+
+```
+elapsed hours since last clear >= auto_ban_clear_interval
+```
+
+and wipes the entire permanent ban list if the interval has passed. The `BansAutoCleared` scripting event fires afterwards so scripts can log or react to the clearance.
+
+## Range Bans
+
+Range bans block entire IP prefixes. sb0t checks whether a connecting user's IP **starts with** a stored prefix string:
+
+```csharp
+// RangeBans.IsRangeBanned
+String str = client.ExternalIP.ToString();
+return list.Find(x => str.StartsWith(x)) != null;
+```
+
+This means a prefix of `"203.0.113."` blocks every address in `203.0.113.0/24`, while `"203.0."` blocks the full /16. Entries are stored in `rangebans.xml`:
+
+```xml
+<?xml version="1.0"?>
+<rangebans>
+  <item>203.0.113.</item>
+  <item>10.20.</item>
+</rangebans>
+```
+
+Use the in-room command `#rangeban add <prefix>` (requires Administrator+) to add an entry, or manage entries through the GUI ban panel.
+
+## ASN Bans
+
+Autonomous System Number (ASN) bans block entire hosting networks, ISPs, or VPN providers in one entry. sb0t calls `client.GetASN()` at join time and checks the result against the stored list:
+
+```csharp
+// AsnBans.IsBanned
+return list.Contains(client.GetASN());
+```
+
+ASN bans are stored as unsigned integers in `asnbans.xml`:
+
+```xml
+<?xml version="1.0"?>
+<asnbans>
+  <item>13335</item>  <!-- Cloudflare -->
+  <item>16509</item>  <!-- Amazon AWS -->
+</asnbans>
+```
+
+Add an ASN with `#asnban add <number>` and list current entries with `#asnban list`. Each entry is displayed as `AS<number>` for readability.
+
+## Muzzles
+
+Muzzling silences a user — their messages are discarded — without removing them from the room. Like bans, muzzles match on both IP and GUID:
+
+```csharp
+// Muzzles.IsMuzzled
+return list.Find(x =>
+    x.IP.Equals(client.ExternalIP) ||
+    x.Guid.Equals(client.Guid)) != null;
+```
+
+Muzzle state is persisted across server restarts in `muzzles.xml`. A muzzled user who rejoins the room is still muzzled.
+
+### Muzzle Timeout
+
+The `MuzzleTimeout` setting (registry key `mtimeout`, type `byte`) specifies an auto-unmuzzle duration in **minutes**. When `MuzzleTimeout > 0`, the `Muzzles.Tick()` loop removes expired entries and broadcasts an unmuzzle notice using the `Timeouts` template:
+
+```csharp
+uint target = (uint)(Settings.MuzzleTimeout * 60);
+
+if (target > 0)
+    for (int i = (list.Count - 1); i > -1; i--)
+        if ((time - m.Time) > target)
+        {
+            // unmuzzle and announce
+        }
+```
+
+Set `MuzzleTimeout` to `0` to make muzzles permanent until manually lifted.
+
+## Kiddie / Quarantine State
+
+A "kiddied" user is placed into quarantine. The `Kiddied` list tracks GUIDs in memory (not persisted to disk — the list clears on restart):
+
+```csharp
+// Kiddied.IsKiddied — GUID-only match
+return list.FindIndex(x => x.Equals(client.Guid)) > -1;
+```
+
+Quarantined users (`IUser.Quarantined == true`) cannot interact normally with the room. When a user successfully logs in with a valid password account, `client.Unquarantine()` is called automatically to release them from quarantine.
+
+Use `#kiddie <name>` to quarantine a user and `#unkiddie <name>` to release them.
+
+## Redirect
+
+`IUser.Redirect(hashlink)` sends the client a cross-room redirect packet, moving them to a different Ares chatroom:
+
+```csharp
+// IUser interface
+/// <summary>Redirect the user to a different chatroom</summary>
+void Redirect(String hashlink);
+```
+
+The `hashlink` must be a valid encrypted Ares room hashlink (validated at filter-add time). Redirects are used both by administrators and as a `FilterType.Redirect` action in the word filter.
+
+In scripts, call `userobj.redirect(hashlink)`:
+
+```js
+function onJoin(userobj) {
+    if (userobj.name === "banned_name") {
+        userobj.redirect("arlnk://...");
+    }
+}
+```
+
+## Proxy Detection
+
+`core/Proxies.cs` maintains two blocklists that are checked at connection time:
+
+- **IP range blocklist** — a hardcoded list of known VPN and proxy provider ranges (HotSpot Shield, CyberGhost, Spotflux, etc.).
+- **DNS keyword blocklist** — checks the reverse-DNS hostname for keywords such as `"vpn"`, `"cloud"`, `"hide"`, `"cyberghost"`, `"softlayer"`, and others.
+- **Tor exit node list** — downloaded periodically from `https://www.dan.me.uk/torlist/` and cached locally in `tor.dat`. The list refreshes at a randomised interval between 5.5 and 12 hours.
+
+When `Proxies.Check(ip, dns)` returns `true`, the server fires the `ProxyDetected` scripting event. If the event handler returns `true` (or no script handles it), the connection is dropped.
+
+## Failed Login Tracking
+
+`commands/LoginAttempts.cs` tracks consecutive failed password attempts per GUID. Each invalid attempt increments the counter; `AccountManager.Login()` fires `Events.InvalidLoginAttempt(client)` on failure, which scripts can intercept to auto-muzzle or ban repeat offenders:
+
+```js
+function onLoginFailed(userobj) {
+    // custom response to a bad password attempt
+}
+```
+
+The counter is cleared when the user disconnects (`LoginAttempts.Remove(client)`) or when `LoginAttempts.Clear()` is called.
+
+## IBan Interface
+
+Permanent ban entries exposed to scripts implement `IBan`:
+
+```csharp
+public interface IBan
+{
+    String    Name       { get; }
+    String    Version    { get; }
+    Guid      Guid       { get; }
+    IPAddress ExternalIP { get; }
+    IPAddress LocalIP    { get; }
+    ushort    Port       { get; }
+    void      Unban();
+}
+```
+
+Iterate the ban list with `BanSystem.Eval(action)` and call `ban.Unban()` to remove individual entries programmatically.
+
+<Warning>
+  Banning a user on a **linked leaf** node does not automatically propagate the ban to the hub or to other leaves. Each node maintains its own `BanSystem` database. If you need network-wide bans, apply them on the hub and configure leaf nodes to respect hub-sourced bans through the scripting event layer.
+</Warning>

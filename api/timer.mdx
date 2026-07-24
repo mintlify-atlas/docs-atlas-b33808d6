@@ -1,0 +1,124 @@
+---
+title: "Timer — Scheduled Callbacks in sb0t Scripts"
+sidebarTitle: "Timer"
+description: "Use sb0t's Timer instance to run JavaScript callbacks on a fixed interval, separate from the built-in onTimer event."
+---
+
+Besides the global `onTimer` event handler — which fires once every second for every loaded script — sb0t provides a constructable `Timer` object that lets you run a JavaScript callback on a custom interval. Each `Timer` instance fires independently, making it easy to schedule multiple tasks at different rates without cluttering `onTimer` with manual counter logic.
+
+<Note>
+  The global `onTimer` event fires every second regardless of whether you use `Timer` instances. Use `Timer` for less frequent events, for multiple independent intervals, or when you want to decouple timing logic into a cleaner callback-based structure.
+</Note>
+
+<Warning>
+  Every active `Timer` instance is checked on every server processing cycle via `TimerList.UpdateTimers()`. Creating a large number of simultaneous timers adds overhead to every cycle. Keep the number of running timers reasonable, and always call `timer.stop()` when a timer is no longer needed.
+</Warning>
+
+---
+
+## Creating a Timer
+
+Use `new Timer()` to create a timer instance. After creation, set the `interval` (in milliseconds) and an `oncomplete` callback, then call `start()` to activate it.
+
+```javascript
+var t = new Timer();
+t.interval = 60000;         // fire every 60 seconds
+t.oncomplete = function() {
+    room.say("60 seconds have passed!");
+};
+t.start();
+```
+
+The timer fires **once** per interval cycle. After firing, the timer is removed from the active list. To create a repeating timer, call `t.start()` again from inside the callback.
+
+---
+
+## Timer Instance Properties
+
+<ParamField body="interval" type="number">
+  The interval in **milliseconds** between the call to `start()` and when `oncomplete` is invoked. The minimum enforced value is `500` ms — any value below 500 is silently clamped to 500.
+
+  Defaults to `1000` ms.
+</ParamField>
+
+<ParamField body="oncomplete" type="function">
+  The callback function to invoke when the interval elapses. Set this before calling `start()`.
+
+  The callback receives no arguments and is called in the context of the script engine's global object.
+</ParamField>
+
+---
+
+## Timer Instance Methods
+
+### `timer.start()`
+
+Adds this timer to the active timer list and records the current server tick as the start time. The callback will fire after `interval` milliseconds have elapsed.
+
+**Returns:** `boolean` — `true` if the timer was added successfully, `false` if it was already in the active list.
+
+---
+
+### `timer.stop()`
+
+Removes this timer from the active list. The `oncomplete` callback will not be called again unless `start()` is called again.
+
+**Returns:** `boolean` — `true` if the timer was found and removed, `false` if it was not active.
+
+---
+
+## Lifecycle and Cleanup
+
+When a script is unloaded, all timers belonging to that script are automatically removed from the active list by `TimerList.RemoveScriptTimers()`. You do not need to manually stop timers in a cleanup handler — but doing so is good practice if you want to cancel them earlier.
+
+Timers are matched to their owning script by the script name stored at construction time. If the owning script is no longer loaded when a timer fires, the callback is silently skipped.
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Repeating Timer (every 60 seconds)
+var announceTimer = new Timer();
+announceTimer.interval = 60000;
+announceTimer.oncomplete = function() {
+    room.say("Remember to read the room rules!");
+    announceTimer.start(); // re-arm for next interval
+};
+announceTimer.start();
+```
+
+```javascript One-shot Delayed Message
+var delayTimer = new Timer();
+delayTimer.interval = 5000;
+delayTimer.oncomplete = function() {
+    room.say("5 seconds have passed since the last join.");
+};
+
+function onUserJoin(user) {
+    delayTimer.stop();     // reset if someone joins again before it fires
+    delayTimer.start();
+}
+```
+
+```javascript Multiple Independent Timers
+var fastTimer = new Timer();
+fastTimer.interval = 10000; // every 10 seconds
+fastTimer.oncomplete = function() {
+    // fast task
+    fastTimer.start();
+};
+
+var slowTimer = new Timer();
+slowTimer.interval = 300000; // every 5 minutes
+slowTimer.oncomplete = function() {
+    room.say("Five-minute reminder!");
+    slowTimer.start();
+};
+
+fastTimer.start();
+slowTimer.start();
+```
+
+</CodeGroup>

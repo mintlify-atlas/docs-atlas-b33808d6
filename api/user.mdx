@@ -1,0 +1,337 @@
+---
+title: "User Object — sb0t JavaScript Scripting API"
+sidebarTitle: "User"
+description: "API reference for the JSUser object in sb0t scripts. Read user properties, send messages, ban, redirect, and modify user state."
+---
+
+`User` objects are passed directly to event callbacks (such as `onUserJoin`, `onChat`, and so on) and are also returned by the global `user()` lookup helper. Each instance wraps an internal `IUser` record and exposes the complete user interface to scripts — from read-only identity fields to writable state toggles and action methods like banning, redirecting, and sending messages.
+
+<Note>
+  The owner of the room (the admin account that started the server) is protected: `ban()`, `disconnect()`, `redirect()`, and level changes are silently ignored for that account.
+</Note>
+
+---
+
+## Properties
+
+### Identity & Network
+
+<ParamField path="id" type="int">
+  The numeric session ID assigned to this connection. Returns `-1` for users connected via a linked leaf server. **Read-only.**
+</ParamField>
+
+<ParamField path="guid" type="string">
+  The 16-byte GUID that uniquely identifies the Ares client installation, formatted as a standard UUID string. **Read-only.**
+</ParamField>
+
+<ParamField path="name" type="string">
+  The user's current display name. Assigning a new value renames the user for the duration of the session. **Read/write.**
+</ParamField>
+
+<ParamField path="orgName" type="string">
+  The original name the user had when they first joined the room. This value never changes, even if `name` is overridden. **Read-only.**
+</ParamField>
+
+<ParamField path="externalIp" type="string">
+  The user's externally visible IP address as a dotted-decimal string. **Read-only.**
+</ParamField>
+
+<ParamField path="localIp" type="string">
+  The user's local (LAN) IP address as a dotted-decimal string. **Read-only.**
+</ParamField>
+
+<ParamField path="localEP" type="string">
+  The user's full local endpoint in `address:port` notation. Returns `"0.0.0.0:0"` if the endpoint is unavailable. **Read-only.**
+</ParamField>
+
+<ParamField path="dns" type="string">
+  The DNS hostname resolved for the user's IP address. **Read-only.**
+</ParamField>
+
+<ParamField path="port" type="int">
+  The data transfer port advertised by the Ares client. **Read-only.**
+</ParamField>
+
+<ParamField path="version" type="string">
+  The Ares client version string reported at connection time. **Read-only.**
+</ParamField>
+
+<ParamField path="joinTime" type="number">
+  Unix timestamp (seconds since epoch) for when the user joined this session. **Read-only.**
+</ParamField>
+
+---
+
+### Profile
+
+<ParamField path="age" type="int">
+  The age value self-reported by the user in their Ares profile. **Read-only.**
+</ParamField>
+
+<ParamField path="gender" type="string">
+  The gender self-reported by the user. Returns `"Male"`, `"Female"`, or `"Unknown"`. **Read-only.**
+</ParamField>
+
+<ParamField path="country" type="string">
+  The two-letter country code string resolved from the user's country byte. **Read-only.**
+</ParamField>
+
+<ParamField path="region" type="string">
+  The regional location string reported by the Ares client. **Read-only.**
+</ParamField>
+
+<ParamField path="fileCount" type="int">
+  The number of files the user is currently sharing. **Read-only.**
+</ParamField>
+
+<ParamField path="personalMessage" type="string">
+  The user's personal status message. Can be overridden by scripts. **Read/write.**
+</ParamField>
+
+<ParamField path="avatar" type="object">
+  A `JSAvatarImage` object containing the user's avatar image data. Assigning a `JSAvatarImage` value replaces the avatar; assigning any other value clears it.
+</ParamField>
+
+<ParamField path="font" type="object">
+  A `UserFont` object describing the user's custom chat font. The object exposes four read-only sub-properties:
+
+  | Sub-property | Type | Description |
+  |--------------|------|-------------|
+  | `font.enabled` | bool | Whether the custom font is active. |
+  | `font.family` | string | Font family name (maps to `FontName` in the source). |
+  | `font.nameColor` | string | Hex colour applied to the username. |
+  | `font.textColor` | string | Hex colour applied to chat text. |
+</ParamField>
+
+---
+
+### Admin & Room State
+
+<ParamField path="level" type="int">
+  The user's current admin level. Valid values:
+
+  | Value | Meaning |
+  |-------|---------|
+  | `0` | Regular user |
+  | `1` | Moderator |
+  | `2` | Administrator |
+  | `3` | Host |
+
+  Assigning a value in the range `0–3` changes the level, subject to the `ScriptCanLevel` server setting. The owner's level cannot be changed. **Read/write.**
+</ParamField>
+
+<ParamField path="vroom" type="int">
+  The virtual room (channel) the user is currently in. Accepts values `0–65535`. Assigning a value moves the user to the specified virtual room. **Read/write.**
+</ParamField>
+
+<ParamField path="muzzled" type="bool">
+  Whether the user is currently muzzled (prevented from sending public chat). Setting to `true` muzzles; `false` unmuzzles. **Read/write.**
+</ParamField>
+
+<ParamField path="customName" type="string | null">
+  An override display name applied on top of the user's real name. Set to `null` to remove the override and restore the original name. **Read/write.**
+</ParamField>
+
+<ParamField path="cloaked" type="bool">
+  Whether the user is hidden from the user list. Setting to `true` hides the user; `false` makes them visible again. **Read/write.**
+</ParamField>
+
+<ParamField path="visible" type="bool">
+  Derived visibility flag. Returns `true` if the user is not cloaked (for local users) or is marked as visible by the link layer (for linked users). **Read-only.**
+</ParamField>
+
+---
+
+### Boolean Status Flags
+
+<ParamField path="browsable" type="bool">
+  `true` if the user is sharing files and accepts browse requests. **Read-only.**
+</ParamField>
+
+<ParamField path="fastPing" type="bool">
+  `true` if the client uses the keep-alive (fast-ping) protocol extension. **Read-only.**
+</ParamField>
+
+<ParamField path="ghost" type="bool">
+  `true` if the user entry is a linked ghost (connected via a leaf server). **Read-only.**
+</ParamField>
+
+<ParamField path="customClient" type="bool">
+  `true` if the user is connecting with a third-party Ares-compatible client. **Read-only.**
+</ParamField>
+
+<ParamField path="webClient" type="bool">
+  `true` if the user is connecting via the web-browser client interface. **Read-only.**
+</ParamField>
+
+<ParamField path="canHTML" type="bool">
+  `true` if the client supports receiving HTML-formatted messages. **Read-only.**
+</ParamField>
+
+<ParamField path="owner" type="bool">
+  `true` if this user is the room owner (the host account that started the server). **Read-only.**
+</ParamField>
+
+<ParamField path="registered" type="bool">
+  `true` if the user is logged in to a registered account. **Read-only.**
+</ParamField>
+
+<ParamField path="captcha" type="bool">
+  `true` if the user has passed the captcha challenge. **Read-only.**
+</ParamField>
+
+<ParamField path="idle" type="bool">
+  `true` if the user is currently marked as idle. **Read-only.**
+</ParamField>
+
+<ParamField path="quarantined" type="bool">
+  `true` if the user is in the quarantine holding area and has not yet been admitted to the room. **Read-only.**
+</ParamField>
+
+<ParamField path="linked" type="bool">
+  `true` if this user record originates from a linked leaf server rather than a direct local connection. **Read-only.**
+</ParamField>
+
+<ParamField path="leaf" type="object | null">
+  The `Leaf` object representing the linked server this user came from. Returns `null` for locally connected users. **Read-only.**
+</ParamField>
+
+---
+
+## Methods
+
+<ParamField path="user.ban()" type="function">
+  Bans the user by IP address and GUID, then disconnects them. The ban entry persists in the ban list until manually removed. Has no effect on the room owner.
+</ParamField>
+
+<ParamField path="user.disconnect()" type="function">
+  Disconnects the user from the room without adding a ban entry. Has no effect on the room owner.
+</ParamField>
+
+<ParamField path="user.redirect(hashlink)" type="function">
+  Sends the user an Ares redirect to the room identified by `hashlink`. The client will automatically attempt to join the target room.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `hashlink` | string | An `arlnk://` deep-link or IP:port string for the destination room. |
+</ParamField>
+
+<ParamField path="user.sendText(text)" type="function">
+  Broadcasts a public chat line into the room attributed to this user's name. All users in the room see the message.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `text` | string | The message text to broadcast. |
+</ParamField>
+
+<ParamField path="user.sendHTML(text)" type="function">
+  Sends an HTML-formatted message to this specific user. Only clients where `canHTML` is `true` will render the markup.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `text` | string | HTML string to deliver. |
+</ParamField>
+
+<ParamField path="user.sendEmote(text)" type="function">
+  Sends an emote action line attributed to this user. The text is broadcast to the room in the emote style (e.g. `* Username text`).
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `text` | string | The emote text. |
+</ParamField>
+
+<ParamField path="user.setTopic(text)" type="function">
+  Sends a virtual topic that is visible only to this individual user without changing the global room topic.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `text` | string | Topic text to display. Pass `undefined` to restore the real room topic. |
+</ParamField>
+
+<ParamField path="user.setUrl(address, text)" type="function">
+  Sends a URL tag visible only to this user, overriding the room-wide URL tag for their session. Pass two empty strings to clear it.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `address` | string | The URL to display. |
+  | `text`    | string | The link label. |
+</ParamField>
+
+<ParamField path="user.nudge(sender)" type="function">
+  Sends a nudge notification to this user. Only works for custom clients (`customClient === true`).
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `sender` | string | The name to display as the nudge sender. If omitted, defaults to `Room.botName`. |
+</ParamField>
+
+<ParamField path="user.scribble(sender, img)" type="function">
+  Sends a scribble drawing to the user. Only works for custom clients. The first argument may be either a `JSScribbleImage` object (sender defaults to `Room.botName`) or a sender name string followed by a `JSScribbleImage`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `sender` | string \| JSScribbleImage | Sender name, or the scribble image itself. |
+  | `img` | JSScribbleImage | Scribble image (only required when `sender` is a string). |
+</ParamField>
+
+<ParamField path="user.restoreAvatar()" type="function">
+  Restores the user's original avatar, discarding any script-assigned replacement.
+</ParamField>
+
+<ParamField path="user.getASN()" type="function">
+  Returns the Autonomous System Number (ASN) associated with the user's current IP address as an unsigned 32-bit integer. Useful for network-level access controls.
+</ParamField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Greeting a user on join
+function onUserJoin(user) {
+  // Send a private welcome message visible only to the joining user
+  print(user, "Welcome to " + Room.name + ", " + user.name + "!");
+
+  // Muzzle users who have not passed the captcha
+  if (!user.captcha) {
+    user.muzzled = true;
+    print(user, "You are muzzled until you complete the captcha.");
+  }
+}
+```
+
+```javascript Banning a user via a chat command
+function onChat(user, text) {
+  if (text.startsWith("!ban ") && user.level >= 2) {
+    var targetName = text.slice(5).trim();
+
+    Users.local(function(u) {
+      if (u.name.toLowerCase() === targetName.toLowerCase()) {
+        u.ban();
+        print("Banned: " + u.name + " (" + u.externalIp + ")");
+      }
+    });
+  }
+}
+```
+
+```javascript Redirecting a user to another room
+function onChat(user, text) {
+  if (text === "!move" && user.level >= 1) {
+    user.redirect("arlnk://AAABBBCCCDDD"); // replace with a real hashlink
+  }
+}
+```
+
+```javascript Reading font and profile info
+function onUserJoin(user) {
+  if (user.font.enabled) {
+    print(user.name + " uses font: " + user.font.family +
+          " (name colour: " + user.font.nameColor + ")");
+  }
+  print(user.name + " joined from " + user.country + " — ASN " + user.getASN());
+}
+```
+
+</CodeGroup>

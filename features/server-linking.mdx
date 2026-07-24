@@ -1,0 +1,142 @@
+---
+title: "Server Linking: Hub and Leaf Topology"
+sidebarTitle: "Server Linking"
+description: "Link multiple sb0t servers together in a Hub/Leaf network to share a unified user pool and chat across machines."
+---
+
+sb0t supports connecting multiple independent server instances into a single logical chatroom through a **Hub/Leaf** topology. Users on every connected server see a unified user list and can exchange public messages, private messages, emotes, and rich media (avatars, scribbles, nudges) as if they were all in the same room. This lets you spread a community across multiple machines or geographic locations while preserving a coherent experience.
+
+## Topology Overview
+
+The network has two roles, defined by the `LinkMode` enum in `core.LinkHub`:
+
+| Value | Mode | Behaviour |
+|---|---|---|
+| `0` | `Disabled` | Linking is off; the server operates standalone |
+| `1` | `Hub` | Accepts incoming leaf connections; stores and relays all cross-server traffic |
+| `2` | `Leaf` | Connects outward to a hub; sends its local user events upstream |
+
+A single hub can accept connections from many leaves simultaneously. The hub maintains a `LeafPool.Leaves` list — a `List<Leaf>`, each entry holding the leaf's socket, user list, ping timestamps, and login state. Leaves do **not** connect directly to each other; all traffic is routed through the hub.
+
+When the server starts in Hub mode, it also spins up an internal `LinkClient` that connects to itself over loopback (`ConnectLocal()`), so the hub's own local users participate in the link network via the same code path as remote leaves.
+
+## Link Protocol Version
+
+All linking peers must negotiate at least protocol version **500** (`Settings.LINK_PROTO = 500`). If a connecting leaf presents a lower protocol number during the handshake, the hub rejects it with a `LinkError.ExpiredProtocol` error and closes the connection.
+
+## Configuration
+
+### Setting the Link Mode
+
+In the sb0t GUI, navigate to **Settings → Linking** and choose the link mode. The value is stored as `link_mode` and is read at startup:
+
+```csharp
+core.LinkHub.LinkMode link_mode =
+    (core.LinkHub.LinkMode) Settings.Get<int>("link_mode");
+```
+
+Changing the mode requires a server restart.
+
+### Hub: Trusted Leaves
+
+When running as a hub, sb0t only accepts leaf connections from servers that appear in the **trusted leaves** list, managed by `TrustedLeavesManager`. Each trusted entry is a `(name, guid)` pair stored in an SQLite database at:
+
+```
+%AppData%\sb0t\<app-name>\Dat\trusted.dat
+```
+
+At handshake time the leaf sends a 20-byte SHA-1 credential derived from its name and GUID. The hub iterates `TrustedLeavesManager.Items`, re-derives the expected credential for each entry, and accepts the leaf only on an exact match:
+
+```csharp
+using (SHA1 sha1 = SHA1.Create())
+    foreach (TrustedLeafItem i in items)
+    {
+        List<byte> list = new List<byte>();
+        list.AddRange(Encoding.UTF8.GetBytes(i.Name));
+        list.AddRange(i.Guid.ToByteArray());
+        list.Reverse();
+        byte[] buf = sha1.ComputeHash(list.ToArray());
+
+        if (buf.SequenceEqual(data))
+        {
+            result = i;
+            break;
+        }
+    }
+```
+
+<Note>
+Only leaves whose **name and GUID** match an entry in the trusted list are accepted. Connections from unlisted servers are rejected immediately with `LinkError.Untrusted` and the socket is closed.
+</Note>
+
+### Leaf: Connecting to a Hub
+
+A leaf connects by calling `Linker.Connect(hashlink)`, where `hashlink` is the Ares hashlink of the hub room. The `link_mode` setting must be `Leaf` for this to work. Optional automatic reconnection is controlled by `Settings.Get<bool>("link_reconnect")` — when enabled, a disconnected leaf sleeps for 30 seconds and then attempts to reconnect.
+
+## Login Handshake Sequence
+
+### Hub side (`LinkHub.LinkLogin`)
+
+| State | Meaning |
+|---|---|
+| `AwaitingLogin` | Leaf has connected; hub is waiting for the credential packet |
+| `AwaitingUserlist` | Credentials accepted; hub is waiting for the leaf to send its full user list |
+| `Ready` | Userlist received; leaf is fully active in the network |
+
+### Leaf side (`LinkLeaf.LinkLogin`)
+
+| State | Meaning |
+|---|---|
+| `Connecting` | TCP connection is in progress |
+| `AwaitingAck` | Login packet sent; waiting for hub acknowledgement |
+| `Ready` | Fully linked and exchanging messages |
+| `Sleeping` | Disconnected; waiting 30 s before reconnecting |
+
+The hub enforces timeout rules via `Leaf.EnforceRules(time)`:
+
+| Phase | Timeout | Action |
+|---|---|---|
+| `AwaitingLogin` | **10 seconds** | Sends `LinkError.HandshakeTimeout`, closes socket |
+| `AwaitingUserlist` | **60 seconds** | Sends `LinkError.HandshakeTimeout`, closes socket |
+| `Ready` (ping) | **240 seconds** | Sends `LinkError.PingTimeout`, closes socket |
+
+The leaf side mirrors these with its own watchdog: it drops the hub connection after 60 s without an ack, or 240 s without a pong.
+
+## What Is Shared Across the Link
+
+Once a leaf reaches the `Ready` state the hub relays the following events from each leaf to all other connected leaves (and their local users):
+
+<CardGroup cols={2}>
+  <Card title="User Events" icon="user">
+    Join, part, nick change, vroom change, level update, muzzle/unmuzzle, idle/unidle
+  </Card>
+  <Card title="Chat" icon="message">
+    Public text, emotes, private messages, private-ignored notifications
+  </Card>
+  <Card title="Rich Media" icon="image">
+    Avatars, personal messages, custom names, scribbles, nudges
+  </Card>
+  <Card title="Admin Actions" icon="shield">
+    Cross-server admin commands (ban, disconnect, muzzle, redirect, etc.) when `link_admin` is enabled
+  </Card>
+</CardGroup>
+
+Users from remote leaves appear in the local user list as `LinkUser` objects. Their avatars, personal messages, and custom names are synchronised via dedicated relay packets (`MSG_LINK_LEAF_AVATAR`, `MSG_LINK_LEAF_PERSONAL_MESSAGE`, `MSG_LINK_LEAF_CUSTOM_NAME`, etc.).
+
+## Scripting Events
+
+The following events are available for scripts to hook into:
+
+| Event | Fired when |
+|---|---|
+| `Linked()` | The leaf successfully completes the hub handshake and enters `Ready` |
+| `Unlinked()` | The link drops (socket error, ping timeout, or explicit disconnect) |
+| `LeafJoined(leaf)` | A new leaf connects to the hub and is ready |
+| `LeafParted(leaf)` | A leaf disconnects from the hub |
+| `LinkedAdminDisabled(leaf, user)` | A cross-server admin action was rejected because `link_admin` is disabled |
+
+## Cross-Server Banning
+
+<Warning>
+Banning a user on one server (hub or leaf) only bans them **on that server**. Bans are not propagated across the link. A banned user will still be able to connect through a different linked server and their name will appear on all leaves via the normal join relay. To enforce a network-wide ban you must ban the user on each linked server individually.
+</Warning>

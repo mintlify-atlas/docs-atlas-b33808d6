@@ -1,0 +1,341 @@
+---
+title: "HttpRequest — Async HTTP Calls from sb0t Scripts"
+sidebarTitle: "HttpRequest"
+description: "Use sb0t's HttpRequest instance to make async HTTP GET and POST requests from scripts, with callback-based response handling."
+---
+
+sb0t scripts can make outbound HTTP requests using the constructable `HttpRequest` object, enabling scripts to call external APIs, fetch data feeds, post webhook notifications, or retrieve content from the web. Requests run on a background thread and invoke a callback when the response arrives.
+
+<Warning>
+  HTTP requests are **asynchronous**. The `download()` call returns immediately and the response is not available until the `oncomplete` callback fires. Do not attempt to read the result synchronously after calling `download()`.
+</Warning>
+
+<Note>
+  Responses are enqueued and the `oncomplete` callback is invoked on the main server processing thread, so callback code runs safely alongside other script events. However, particularly slow or hung remote servers may cause the background thread to linger — keep external dependencies reliable.
+</Note>
+
+---
+
+## Creating an HttpRequest
+
+Use `new HttpRequest()` to create an instance, configure its properties, and call `download()` to begin the request.
+
+```javascript
+var req = new HttpRequest();
+req.src = "https://example.com/api/data";
+req.method = "GET";
+req.oncomplete = function(result) {
+    room.say("Response: " + result.page);
+};
+req.download();
+```
+
+---
+
+## HttpRequest Instance Properties
+
+<ParamField body="src" type="string">
+  The full URL of the request target (e.g. `"https://example.com/api/endpoint"`).
+</ParamField>
+
+<ParamField body="method" type="string">
+  The HTTP method to use. Accepted values (case-insensitive): `"GET"` or `"POST"`. Defaults to `"get"`.
+</ParamField>
+
+<ParamField body="params" type="string">
+  The POST body payload. Only sent when `method` is `"POST"`. Encoded using UTF-8 if `utf` is `true`, otherwise using the system default encoding. The `Content-Type` is set to `application/x-www-form-urlencoded` automatically.
+</ParamField>
+
+<ParamField body="accept" type="string">
+  Sets the HTTP `Accept` request header (e.g. `"application/json"`). Optional.
+</ParamField>
+
+<ParamField body="userAgent" type="string">
+  Sets the `User-Agent` request header. Defaults to an empty string.
+</ParamField>
+
+<ParamField body="host" type="string">
+  Overrides the HTTP `Host` header. Optional — leave unset to use the host derived from `src`.
+</ParamField>
+
+<ParamField body="utf" type="boolean">
+  When `true`, the POST body (`params`) is encoded as UTF-8 and the response body is decoded as UTF-8. When `false`, the system default encoding is used. Defaults to `false`.
+</ParamField>
+
+<ParamField body="oncomplete" type="function">
+  The callback function invoked when the request completes. Receives a single `HttpRequestResult` argument. Set this before calling `download()`.
+</ParamField>
+
+---
+
+## HttpRequest Instance Methods
+
+### `request.header(key, value)`
+
+Sets a custom HTTP request header. Call this before `download()`. Can be called multiple times for multiple headers.
+
+<ParamField body="key" type="string" required>
+  The header name (e.g. `"Authorization"`).
+</ParamField>
+
+<ParamField body="value" type="string" required>
+  The header value (e.g. `"Bearer my-token"`).
+</ParamField>
+
+**Returns:** `boolean` — `true` if the header was set, `false` if either argument is `undefined`.
+
+---
+
+### `request.download(arg?)`
+
+Initiates the HTTP request on a background thread. The instance can only process one request at a time — calling `download()` while a request is in progress returns `false` immediately.
+
+<ParamField body="arg" type="string">
+  An optional arbitrary string passed through to the `HttpRequestResult.arg` property in the callback. Useful for identifying which request triggered the callback when sharing one handler across multiple requests.
+</ParamField>
+
+**Returns:** `boolean` — `true` if the request was started, `false` if the instance is already busy.
+
+---
+
+## HttpRequestResult Object
+
+The `oncomplete` callback receives an `HttpRequestResult` object as its sole argument:
+
+<ParamField body="page" type="string">
+  The full response body as a string. Decoded using UTF-8 if `utf` was `true` on the request, otherwise using the system default encoding. Empty string if the request failed.
+</ParamField>
+
+<ParamField body="arg" type="string">
+  The optional argument string passed to `download()`. Useful for correlating responses to specific requests.
+</ParamField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Basic GET Request
+var req = new HttpRequest();
+req.src = "https://api.example.com/greeting";
+req.method = "GET";
+req.utf = true;
+req.oncomplete = function(result) {
+    if (result.page) {
+        room.say("API says: " + result.page);
+    } else {
+        room.say("Request failed or returned empty.");
+    }
+};
+req.download();
+```
+
+```javascript POST Request with Parameters
+var req = new HttpRequest();
+req.src = "https://api.example.com/notify";
+req.method = "POST";
+req.params = "event=join&user=Alice";
+req.utf = true;
+req.oncomplete = function(result) {
+    room.say("Server responded: " + result.page);
+};
+req.download();
+```
+
+```javascript Request with Custom Headers and Arg
+var req = new HttpRequest();
+req.src = "https://api.example.com/secure";
+req.method = "GET";
+req.header("Authorization", "Bearer my-secret-token");
+req.header("Accept", "application/json");
+req.oncomplete = function(result) {
+    room.say("Got response for: " + result.arg);
+    room.say(result.page);
+};
+req.download("secure-lookup");
+```
+
+</CodeGroup>
+
+---
+
+## Query — XML Parser
+
+`Query` is a constructable object for building parameterized SQLite queries. However, `JSNode`, `JSNodeCollection`, and `JSNodeAttributes` are the XML parsing objects that integrate with `HttpRequest` responses — they wrap the standard .NET `XmlDocument` API and let scripts navigate parsed XML trees.
+
+To parse an XML response, load the response body into a `Query`-adjacent XML document context. The `Node` and `NodeCollection` objects are surfaced automatically when methods like `getNodesByName()` return results.
+
+### Node Object
+
+A `Node` represents a single XML element. Nodes are returned by XML parsing operations.
+
+<ParamField body="nodeName" type="string">
+  The tag name of the XML element (e.g. `"item"`, `"title"`).
+</ParamField>
+
+<ParamField body="nodeValue" type="string">
+  The inner text content of the element. Can be assigned to update the node's text in the underlying XML document.
+</ParamField>
+
+<ParamField body="parentNode" type="Node">
+  The parent `Node` of this element, or `null` if this is the root.
+</ParamField>
+
+<ParamField body="childNodes" type="NodeCollection">
+  A `NodeCollection` of child elements (excludes text/comment nodes that begin with `#`). Returns `null` if there are no child elements.
+</ParamField>
+
+<ParamField body="attributes" type="NodeAttributes">
+  A `NodeAttributes` collection for this element's XML attributes. Returns `null` if there are no attributes.
+</ParamField>
+
+---
+
+#### `node.getNodesByName(tagName)`
+
+Searches for all descendant elements with a given tag name.
+
+<ParamField body="tagName" type="string" required>
+  The element tag name to search for.
+</ParamField>
+
+**Returns:** `NodeCollection` — the matching nodes, or `null` if none were found.
+
+---
+
+#### `node.appendChild(tagName)`
+
+Creates and appends a new child element with the given tag name.
+
+<ParamField body="tagName" type="string" required>
+  The tag name for the new element.
+</ParamField>
+
+**Returns:** `Node` — the newly created child node, or `null` on error.
+
+---
+
+#### `node.removeChild(node)`
+
+Removes a child `Node` from this node.
+
+<ParamField body="node" type="Node" required>
+  The child `Node` instance to remove.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+### NodeCollection Object
+
+An array-like collection of `Node` objects returned by `childNodes` and `getNodesByName()`.
+
+<ParamField body="length" type="number">
+  The number of nodes in the collection. Access individual nodes by numeric index: `collection[0]`, `collection[1]`, etc. Comment and text nodes (whose names begin with `#`) are excluded automatically.
+</ParamField>
+
+---
+
+### NodeAttributes Object
+
+Returned by `node.attributes`, this collection provides access to an element's XML attribute names and values.
+
+<ParamField body="length" type="number">
+  The number of attributes on the element. Access attribute names by numeric index: `attrs[0]`, `attrs[1]`, etc.
+</ParamField>
+
+#### `attrs.getValue(name)`
+
+<ParamField body="name" type="string" required>
+  The attribute name to look up.
+</ParamField>
+
+**Returns:** `string` — the attribute value, or `null` if not found.
+
+---
+
+#### `attrs.setValue(name, value)`
+
+Sets or creates an attribute on the owning element.
+
+<ParamField body="name" type="string" required>Attribute name.</ParamField>
+<ParamField body="value" type="string" required>Attribute value.</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+#### `attrs.removeValue(name)`
+
+Removes an attribute from the owning element.
+
+<ParamField body="name" type="string" required>The attribute name to remove.</ParamField>
+
+**Returns:** `boolean` — `true` if removed, `false` if the attribute was not found.
+
+---
+
+### Query Object
+
+`Query` is used for parameterized SQLite queries rather than XML parsing. See the database scripting documentation for usage. The constructor accepts a SQL string with `{0}`, `{1}`, … placeholders and corresponding values:
+
+```javascript
+var q = new Query("SELECT * FROM users WHERE name = {0}", "Alice");
+```
+
+Placeholder values may be strings, integers, or floating-point numbers.
+
+---
+
+### Example: Fetch and Parse XML
+
+<CodeGroup>
+
+```javascript Fetch RSS Feed and Parse XML
+// NOTE: XML parsing requires an XML document object available in your script context.
+// The Node/NodeCollection API is surfaced when the server's XML DOM methods return results.
+
+var req = new HttpRequest();
+req.src = "https://feeds.example.com/rss.xml";
+req.method = "GET";
+req.utf = true;
+req.oncomplete = function(result) {
+    if (!result.page) {
+        room.say("Failed to fetch feed.");
+        return;
+    }
+    // result.page contains the raw XML string — pass it to your XML document context
+    room.say("Fetched " + result.page.length + " bytes of XML.");
+};
+req.download();
+```
+
+```javascript Navigate a Node Tree
+// Assuming 'rootNode' is a Node object returned from an XML parse operation:
+function processNode(rootNode) {
+    var items = rootNode.getNodesByName("item");
+
+    if (!items) {
+        room.say("No <item> elements found.");
+        return;
+    }
+
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var titleNodes = item.getNodesByName("title");
+
+        if (titleNodes && titleNodes.length > 0) {
+            room.say("Title: " + titleNodes[0].nodeValue);
+        }
+
+        var attrs = item.attributes;
+        if (attrs && attrs.length > 0) {
+            room.say("First attribute: " + attrs[0] + " = " + attrs.getValue(attrs[0]));
+        }
+    }
+}
+```
+
+</CodeGroup>

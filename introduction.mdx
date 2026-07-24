@@ -1,0 +1,61 @@
+---
+title: "sb0t: Self-Hosted Ares Chat Room Server"
+sidebarTitle: "Introduction"
+description: "sb0t is a Windows desktop application that hosts an Ares-compatible chat room, with moderation tools, JavaScript scripting, and optional web client support."
+---
+
+sb0t is a self-hosted Ares chat room server built with C# and WPF. It lets anyone run a fully featured chat room that Ares Galaxy clients can connect to directly, without relying on a third-party service. Designed for community operators who want full control over their chat environment, sb0t handles everything from user authentication and moderation to word filtering, captcha challenges, and browser-based web chat through its companion ib0t interface.
+
+## How It Works
+
+When you click **Start server**, sb0t calls `ServerCore.Open()`, which binds a `TcpListenerEx` and a `UdpListener` to your configured port (default `54321`). From that point on, a dedicated background thread drives the entire server loop — accepting TCP connections, servicing UDP packets, enforcing flood controls, and ticking all registered extensions roughly every 25 milliseconds. The WPF GUI stays responsive throughout; it reads and writes all configuration values to the Windows Registry under `HKCU\Software\sb0t\<AppDomain.FriendlyName>`, so settings persist across restarts without any config files to manage.
+
+## Key Capabilities
+
+**Admin levels** — Every connected user holds one of four levels drawn from the `ILevel` enum:
+
+| Level | Value | Description |
+|---|---|---|
+| `Regular` | `0` | Default for all new users |
+| `Moderator` | `1` | Can kick, mute, and use basic mod commands |
+| `Administrator` | `2` | Full moderation plus ban management |
+| `Host` | `3` | Complete server control; receives update notifications |
+
+**Ban system** — IP-based and name-based bans with optional automatic expiry, loaded from a persistent store at startup via `BanSystem.LoadBans()`.
+
+**Word filter** — A configurable word filter (`filtering` setting) scans public chat messages and can block or replace prohibited content. Legacy filter files from sb0t 4.x can be imported automatically via the FILTER IMPORTER folder.
+
+**Anti-flood** — Per-IP connection flood detection built into the TCP listener limits rapid reconnections. `FloodControl` tracks in-room message rates and resets every 60 seconds.
+
+**Captcha** — An optional join challenge (`captcha` setting) with selectable modes via `captcha_mode`. Managed by `CaptchaManager` and the `Captcha` class.
+
+**JavaScript scripting** — Powered by the Jurassic JavaScript engine, scripts run against a rich `IRoom` / `IUser` API. Scripting can be restricted by admin level (`inroom_level`) and optionally limited to in-room commands only.
+
+**Web chat (ib0t)** — Enable `enabled` under the `web` registry sub-key to accept WebSocket connections from browser clients. sb0t pushes channel data to the ib0t channel list every 20 minutes.
+
+**Server linking (Hub / Leaf)** — Multiple sb0t instances can be chained together using the `link_mode` setting (`0` = Disabled, `1` = Hub, `2` = Leaf), forming a network where users on all nodes share one room.
+
+## Licensing
+
+sb0t is released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. The full license text is available in the repository. Because sb0t provides a network service, any modifications you deploy must also be made available under the same terms.
+
+<Note>
+  sb0t runs on **Windows only** and stores all settings in the Windows Registry under `HKCU\Software\sb0t\<app-name>`, where `<app-name>` is the executable file name (`AppDomain.CurrentDomain.FriendlyName`). Running multiple instances simultaneously requires each executable to have a **different filename** so that registry keys do not collide.
+</Note>
+
+## Explore the Docs
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Download sb0t, configure your first room, and connect with an Ares client in minutes.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Every registry key explained — server, room, web chat, scripting, and bot behavior settings.
+  </Card>
+  <Card title="Scripting Overview" icon="code" href="/scripting/overview">
+    Write JavaScript scripts using the Jurassic engine to automate and extend your room.
+  </Card>
+  <Card title="Bans & Moderation" icon="shield-halved" href="/admin/bans-and-moderation">
+    Manage admin levels, bans, word filters, captcha, and flood controls.
+  </Card>
+</CardGroup>

@@ -1,0 +1,94 @@
+---
+title: "Room Object — sb0t JavaScript Scripting API"
+sidebarTitle: "Room"
+description: "API reference for the Room static object in sb0t scripts. Access and modify room name, topic, URL tag, hashlink, and bot name."
+---
+
+`Room` is a static singleton object that is available in every sb0t script without any import or instantiation. It exposes the core properties of the running chatroom, allowing scripts to read server metadata and make controlled mutations such as changing the active topic or setting a room-wide URL tag.
+
+---
+
+## Properties
+
+<ParamField path="Room.version" type="int" required>
+  Scripting API version integer. Use this to guard features that may not be available in older server builds. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.name" type="string" required>
+  The configured name of the chatroom as set in the server settings. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.topic" type="string" required>
+  The current room topic broadcast to all users. Assigning a new string immediately pushes the updated topic to every connected client. **Read/write.**
+</ParamField>
+
+<ParamField path="Room.botName" type="string" required>
+  The display name used by the server's bot when sending automated messages. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.customNames" type="bool" required>
+  Global switch for custom user names. When set to `false`, scripts cannot override individual display names room-wide. Toggling this at runtime takes effect immediately. **Read/write.**
+</ParamField>
+
+<ParamField path="Room.externalIp" type="string" required>
+  The externally visible IP address of the server, returned as a dotted-decimal string. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.hashlink" type="string" required>
+  A fully-formed `arlnk://` deep-link that clients can use to join this room directly. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.port" type="int" required>
+  The TCP port on which the chatroom is listening for incoming Ares connections. **Read-only.**
+</ParamField>
+
+<ParamField path="Room.startTime" type="number" required>
+  Unix timestamp (seconds since epoch) recorded when the server process started. Useful for calculating uptime. **Read-only.**
+</ParamField>
+
+---
+
+## Methods
+
+<ParamField path="Room.setUrl(address, text)" type="function">
+  Sets the room-wide URL tag that is displayed to all connected users. Both parameters must be non-empty strings for the tag to be applied. Passing two empty strings (`""`, `""`) clears any existing URL tag, behaving identically to `Room.clearUrl()`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `address` | string | The fully-qualified URL (e.g. `https://example.com`). |
+  | `text`    | string | The human-readable label shown in the Ares client. |
+</ParamField>
+
+<ParamField path="Room.clearUrl()" type="function">
+  Removes the currently active URL tag from the room. All connected clients will immediately see the tag disappear.
+</ParamField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Changing the room topic
+// Set a welcome topic when the script loads
+Room.topic = "Welcome to " + Room.name + "! Type !help for commands.";
+```
+
+```javascript Setting and clearing a URL tag
+// Point users to a website
+Room.setUrl("https://example.com", "Visit our website");
+
+// Remove the URL tag later (e.g. from a timer)
+Room.clearUrl();
+
+// Alternatively, pass two empty strings — same effect
+Room.setUrl("", "");
+```
+
+```javascript Logging server info on startup
+print("Server started at: " + new Date(Room.startTime * 1000).toUTCString());
+print("Hashlink: " + Room.hashlink);
+print("Scripting API version: " + Room.version);
+```
+
+</CodeGroup>

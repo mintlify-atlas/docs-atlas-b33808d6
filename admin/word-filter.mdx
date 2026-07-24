@@ -1,0 +1,201 @@
+---
+title: "Word Filter Configuration in sb0t"
+sidebarTitle: "Word Filter"
+description: "Configure sb0t's word filter to detect and respond to prohibited phrases in public chat and private messages, with wildcard and regex support."
+---
+
+The sb0t word filter scans every public message and private message sent by Regular-level users and applies a configured action when a trigger phrase is matched. Each filter entry pairs a **trigger** (the phrase to detect) with a **`FilterType`** (what to do when it is detected). Entries are stored in `wordfilters.xml` under the server's data directory and survive restarts.
+
+## Wildcard Matching
+
+Trigger phrases support two wildcards that are translated into regular-expression syntax before matching:
+
+| Wildcard | Regex equivalent | Meaning |
+|---|---|---|
+| `?` | `.` | Any single character |
+| `*` | `.*` | Any sequence of characters (including none) |
+
+The translation happens inside both `FilterBefore` and `FilterPM`:
+
+```csharp
+string trigger = Regex.Escape(item.Trigger);
+trigger = trigger.Replace("\\?", ".").Replace("\\*", ".*");
+Regex regex = new Regex(trigger,
+    RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
+```
+
+Matching is **case-insensitive**. All `Regex.Escape()` calls ensure that literal characters in the trigger (e.g., `.`, `+`, `(`) are treated as literals rather than regex operators — only `?` and `*` have special meaning.
+
+<Tip>
+  Wrap a word with `*` on both sides — e.g., `*badword*` — to catch it even when it appears inside a longer string, like `"reallybadwordhere"`. Without the leading `*`, a trigger of `badword` would still match because the regex performs a substring match by default, but using `*` on both sides makes the intent explicit and also covers embedded substrings after Regex.Escape processing.
+</Tip>
+
+## FilterType Actions
+
+The `FilterType` enum (in `commands/WordFilter.cs`) defines all available actions. Actions fall into two groups: those that **do not** require an `Args` value, and those that **do**.
+
+### Actions Without Args
+
+<ParamField body="Muzzle" type="FilterType">
+  Silences the user. The message is cancelled (`return String.Empty`) and the user is added to the persistent muzzle list via `Muzzles.AddMuzzle(client)`, so they remain muzzled even after rejoining. A room notice is printed and the event is written to `wordfilter.log.txt`.
+</ParamField>
+
+<ParamField body="Kill" type="FilterType">
+  Disconnects the user immediately. The message is suppressed. A room notice is printed and logged.
+</ParamField>
+
+<ParamField body="Ban" type="FilterType">
+  Bans the user via `client.Ban()`. The message is suppressed. A room notice is printed and logged. Ban evasion through reconnection is blocked by the dual IP+GUID ban check.
+</ParamField>
+
+<ParamField body="Censor" type="FilterType">
+  Cancels the message and sends a private notice back to the triggering user only (`client.Print(...)`). No room-wide announcement is made. Useful for quietly blocking terms without alerting the room.
+</ParamField>
+
+### Actions With Args
+
+<ParamField body="PM" type="FilterType" required>
+  Sends a fake private message to the triggering user from the server bot. The `Args` field is the message text. Supports `+n` (user name) and `+ip` (user IP) placeholders.
+</ParamField>
+
+<ParamField body="Move" type="FilterType" required>
+  Moves the triggering user to a different virtual room (vroom). The `Args` field must be a valid `ushort` vroom number. The message is cancelled.
+
+  ```csharp
+  if (ushort.TryParse(item.Args, out u))
+      client.Vroom = u;
+  ```
+</ParamField>
+
+<ParamField body="Redirect" type="FilterType" required>
+  Sends the user to a different Ares chatroom via `client.Redirect(item.Args)` then disconnects them. The `Args` value must be a valid encrypted Ares hashlink — sb0t validates it at add time using `Server.Hashlinks.Decrypt(item.Args)`.
+</ParamField>
+
+<ParamField body="Announce" type="FilterType" required>
+  Broadcasts one or more configured lines to the room when the trigger is matched. The `Args` field holds the announcement text (multiple lines separated by `\r\n`). Supports `+n`, `+ip`, and `+r` (the text following the trigger in the user's message) placeholders. Use `#addline <ident> <text>` and `#remline <ident> <line>` to manage lines after creation.
+</ParamField>
+
+<ParamField body="Clone" type="FilterType" required>
+  Causes the server to broadcast the configured `Args` text **as if it were spoken by the triggering user**. If the text starts with `/me `, an emote is sent; otherwise a regular public message. Applies only to Regular-level users.
+</ParamField>
+
+<ParamField body="Replace" type="FilterType" required>
+  Performs an in-place text substitution. The trigger is replaced with the `Args` value in the user's message using a case-insensitive regex replace. The modified message is then passed on normally.
+
+  ```csharp
+  text = Regex.Replace(text, Regex.Escape(item.Trigger), item.Args,
+                       RegexOptions.IgnoreCase);
+  ```
+</ParamField>
+
+<ParamField body="Echo" type="FilterType" required>
+  Adds the user to an echo list (managed by `Echo`) so that subsequent messages are echoed back according to the `Args` configuration.
+</ParamField>
+
+<ParamField body="Scribble" type="FilterType" required>
+  Sends an HTML `<img>` tag to users in the same vroom who support HTML rendering. The `Args` value is the image URL. A per-user 30-second cooldown prevents spam; Administrators and above bypass the cooldown.
+</ParamField>
+
+## Processing Stages
+
+The filter runs in three stages per public message:
+
+| Stage | Method | Purpose |
+|---|---|---|
+| Before | `FilterBefore(client, text)` | Intercept and potentially cancel or mutate the message before it is broadcast. Returns the (possibly modified) text, or `String.Empty` to suppress. |
+| After | `FilterAfter(client, text)` | Runs after the message has been broadcast; used for side-effects that do not need to block the message (PM, Clone, Echo). |
+| PM | `FilterPM(client, msg)` | Scans private messages. Supports Ban, Kill, and Redirect; sets `msg.Cancel = true` to suppress delivery. |
+
+### Level Guard
+
+All punitive actions (Muzzle, Kill, Ban, Censor, Move, Redirect) are **only applied to Regular-level users**:
+
+```csharp
+if (client.Level == ILevel.Regular)
+{
+    // apply action
+    return String.Empty;
+}
+```
+
+Moderators, Administrators, and Hosts are never affected by filter triggers (except `Announce`, which can optionally include admins depending on the `AdminAnnounce` setting, and `Scribble`/`Replace` which apply regardless of level).
+
+## Adding Filter Entries
+
+### Via In-Room Command
+
+Use the `#addwordfilter` command with a comma-separated argument list:
+
+```
+#addwordfilter <trigger>, <FilterType>[, <args>]
+```
+
+Examples:
+
+```
+#addwordfilter spam, Muzzle
+#addwordfilter buy*now*, Ban
+#addwordfilter hello, Announce, Welcome to the room, +n!
+#addwordfilter badurl.com, Redirect, arlnk://...
+#addwordfilter swear, Replace, ****
+```
+
+### Via XML (wordfilters.xml)
+
+Entries are saved to and loaded from `wordfilters.xml` in the server data path. The format mirrors the internal `Item` structure:
+
+```xml
+<?xml version="1.0"?>
+<wordfilters>
+  <item>
+    <trigger>spam</trigger>
+    <type>Muzzle</type>
+    <args></args>
+  </item>
+  <item>
+    <trigger>buy*now*</trigger>
+    <type>Ban</type>
+    <args></args>
+  </item>
+  <item>
+    <trigger>hello</trigger>
+    <type>Announce</type>
+    <args>Welcome, +n!</args>
+  </item>
+  <item>
+    <trigger>badurl.com</trigger>
+    <type>Redirect</type>
+    <args>arlnk://encryptedhashlink</args>
+  </item>
+  <item>
+    <trigger>swear</trigger>
+    <type>Replace</type>
+    <args>****</args>
+  </item>
+</wordfilters>
+```
+
+The `<args>` element is required for every entry; leave it empty for actions that do not use it.
+
+### Removing and Viewing Entries
+
+```
+#remwordfilter <index>     — remove entry at index
+#wordfilter               — list all current entries as: <index> - <trigger> [<type>]
+```
+
+## Log File
+
+Every triggered action that modifies or punishes a user is appended to `wordfilter.log.txt` in the server data path:
+
+```
+Alice banned for typing buy*now*
+Bob muzzled for typing spam
+Carol redirected for typing badurl.com in PM
+```
+
+The constant `LOGFILE = "wordfilter.log.txt"` is defined at the top of `WordFilter.cs`. Log lines are written by `LogSend.Log(LOGFILE, message)` — the file is appended to, not overwritten.
+
+<Note>
+  The word filter is evaluated against the **raw message text** before it reaches other handlers. On linked leaf nodes, when a user is connected via a hub link (`client.Link.IsLinked`), punitive actions are suppressed (the message is still cancelled with `return String.Empty`) to avoid conflicting moderation across linked servers. Only non-linked direct connections are fully processed.
+</Note>

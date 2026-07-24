@@ -1,0 +1,338 @@
+---
+title: "Configure Your sb0t Chat Room"
+sidebarTitle: "Configuration"
+description: "All sb0t configuration options: room name, port, bot name, language, admin settings, web chat, scripting levels, and Windows Registry storage details."
+---
+
+Every sb0t option is persisted in the Windows Registry under `HKCU\Software\sb0t\<AppDomain.FriendlyName>`, where `AppDomain.FriendlyName` is the filename of the running executable (e.g., `sb0t.exe`). The GUI reads and writes these values through the static `core.Settings` class; the bot-behavior settings in `commands.Settings` use the same registry root but write to the `\settings` sub-key. You rarely need to touch the registry directly — every option described below has a corresponding control in the GUI. Scripts and extensions access live room properties through the `IRoom` interface instead.
+
+<Note>
+  Direct registry editing is not recommended while sb0t is running. The GUI caches several values in memory (port, name, language, and external IP) and will not pick up registry changes until the next server start. Always use the GUI controls to change settings.
+</Note>
+
+---
+
+## Server
+
+These settings control the network listener and runtime behavior of the server process itself.
+
+<ParamField path="port" type="ushort" default="54321">
+  The TCP and UDP port the server listens on. Must be a valid port number (1–65535). Changes take effect on the next server start. Written by the **Port** text box.
+</ParamField>
+
+<ParamField path="ip" type="byte[]">
+  The server's external (public) IPv4 address, stored as a 4-byte binary value. Used by Ares clients to reach the server from the internet. Falls back to `IPAddress.Loopback` if not set. Written by the **External IP** text box.
+</ParamField>
+
+<ParamField path="udp_address" type="byte[]" default="0.0.0.0">
+  The local IP address the UDP listener binds to, stored as a 4-byte binary value. Defaults to `0.0.0.0` (any interface). Written by the **UDP address** text box.
+</ParamField>
+
+<ParamField path="logging" type="bool" default="false">
+  When `true`, chat events are written to `%AppData%\sb0t\<app-name>\serverlog.txt`. Written by the **Chat logging** checkbox.
+</ParamField>
+
+<ParamField path="autostart" type="bool" default="false">
+  When `true`, the server starts automatically when the application window loads, equivalent to clicking **Start server** immediately on launch. Written by the **Auto start** checkbox.
+</ParamField>
+
+<ParamField path="start_min" type="bool" default="false">
+  When `true`, the main window is minimized to the system tray on startup. Written by the **Start minimized** checkbox.
+</ParamField>
+
+<ParamField path="strict" type="bool" default="false">
+  Enables strict mode, which enforces tighter protocol validation on incoming client connections. Written by the **Strict** checkbox.
+</ParamField>
+
+<ParamField path="local_host" type="bool" default="false">
+  Marks the server as a local host, affecting how the room is advertised and how certain client features behave. Written by the **Local host** checkbox.
+</ParamField>
+
+<ParamField path="hide_ips" type="bool" default="false">
+  When `true`, IP addresses are hidden from non-admin users. Admins at `Administrator` level or above can still see IPs. Written by the **Hide IPs** checkbox.
+</ParamField>
+
+<ParamField path="roomsearch" type="bool" default="false">
+  When `true`, the server registers with the Ares UDP channel list so the room appears in the Ares room browser. The list is refreshed every 30 minutes. Written by the **Room search** checkbox.
+</ParamField>
+
+<ParamField path="link_mode" type="int" default="0">
+  Controls server-linking behavior using the `core.LinkHub.LinkMode` enum:
+
+  | Value | Name | Behavior |
+  |---|---|---|
+  | `0` | `Disabled` | No linking |
+  | `1` | `Hub` | Acts as a hub; accepts leaf connections |
+  | `2` | `Leaf` | Connects outward to a hub server |
+
+  Written by the **Link mode** combo box.
+</ParamField>
+
+<ParamField path="link_reconnect" type="bool" default="false">
+  When `true`, a leaf node automatically attempts to reconnect to its hub after losing the connection. Written by the **Auto reconnect** checkbox on the Linking tab.
+</ParamField>
+
+<ParamField path="link_admin" type="bool" default="false">
+  When `true`, admin levels are shared across linked servers. Written by the **Linked admin** checkbox.
+</ParamField>
+
+<ParamField path="guid" type="byte[]">
+  A 16-byte GUID that uniquely identifies this server instance for linking purposes. Generated automatically on first run with `Guid.NewGuid()` and never changed. Used to construct the `sblnk://` link token.
+</ParamField>
+
+---
+
+## Room
+
+These settings define what the room looks like to connecting clients and which client features are permitted.
+
+<ParamField path="name" type="String" default="my chatroom">
+  The public display name of the chat room. Visible to all connecting Ares and ib0t clients. Written by the **Room name** text box.
+</ParamField>
+
+<ParamField path="topic" type="String" default="welcome to my room">
+  The room's main topic string, shown at the top of most Ares clients. Can be changed at runtime by admins using the `#topic` command or via the scripting API (`Room.Topic`). Defaults to `"welcome to my room"` if the stored value is fewer than two characters.
+</ParamField>
+
+<ParamField path="language" type="byte" default="10">
+  The preferred language code broadcast to connecting clients. Ares uses numeric language codes; the GUI maps them through a combo box. Common values include `10` (English), `11` (German), `12` (Dutch), and `15` (French). Written by the **Language** combo box.
+</ParamField>
+
+<ParamField path="can_room_scribble" type="bool" default="false">
+  When `true`, custom emoticons (scribbles) uploaded to the room are visible to all users. Written by the **Custom emoticons** checkbox.
+</ParamField>
+
+<ParamField path="udp" type="bool" default="false">
+  Enables or disables UDP-based features for room members (such as voice chat coordination packets). Written by the **UDP** checkbox.
+</ParamField>
+
+<ParamField path="voice" type="bool" default="false">
+  Allows voice chat connections within the room. Written by the **Voice chat** checkbox.
+</ParamField>
+
+<ParamField path="files" type="bool" default="false">
+  Allows file sharing and browsing between room members. Written by the **Files** checkbox.
+</ParamField>
+
+<ParamField path="fonts_enabled" type="bool" default="false">
+  When `true`, clients may use custom fonts in chat messages. When `false`, font information in messages is stripped. Written by the **Fonts** checkbox.
+</ParamField>
+
+<ParamField path="captcha" type="bool" default="false">
+  Enables a join challenge that new users must solve before entering the room. Written by the **Captcha** checkbox.
+</ParamField>
+
+<ParamField path="captcha_mode" type="int" default="0">
+  Selects the captcha challenge type. The available modes correspond to the indices of the **Captcha mode** combo box in the GUI.
+</ParamField>
+
+<ParamField path="age_restrict" type="bool" default="false">
+  Enables minimum-age enforcement. Users who report an age below the threshold are rejected at join time. Written by the **Age restriction** checkbox.
+</ParamField>
+
+<ParamField path="age_restrict_value" type="int" default="18">
+  The minimum age required to join the room when `age_restrict` is `true`. Written by the **Minimum age** numeric control.
+</ParamField>
+
+<ParamField path="reject_male" type="bool" default="false">
+  When `true`, connections from clients reporting a male gender are rejected. Written by the **Reject male** checkbox.
+</ParamField>
+
+<ParamField path="reject_female" type="bool" default="false">
+  When `true`, connections from clients reporting a female gender are rejected. Written by the **Reject female** checkbox.
+</ParamField>
+
+<ParamField path="reject_unknown" type="bool" default="false">
+  When `true`, connections from clients reporting an unknown gender are rejected. Written by the **Reject unknown** checkbox.
+</ParamField>
+
+<ParamField path="auto_ban_clear_enabled" type="bool" default="false">
+  When `true`, the ban list is automatically purged on a schedule. Written by the **Auto clear bans** checkbox.
+</ParamField>
+
+<ParamField path="auto_ban_clear_interval" type="int" default="1">
+  The interval (in hours) between automatic ban-list clears when `auto_ban_clear_enabled` is `true`. Written by the **Interval** numeric control.
+</ParamField>
+
+---
+
+## Web Chat
+
+These settings live under the `web` sub-key: `HKCU\Software\sb0t\<app-name>\web`.
+
+<ParamField path="enabled" type="bool" default="false">
+  Master switch for ib0t web chat. When `true`, the server accepts WebSocket connections from browser clients on the same port as the Ares listener. Written by the **Enable web chat** checkbox (`checkBox9`).
+</ParamField>
+
+<ParamField path="url" type="String" default="https://ares.chat/api/ib0t">
+  The endpoint URL to which sb0t pushes channel presence data for the ib0t room browser. Must be an absolute URI. Written by the **ib0t push URL** text box.
+</ParamField>
+
+---
+
+## Scripting
+
+These settings control whether JavaScript scripts can run and at what privilege level.
+
+<ParamField path="scripting" type="bool" default="false">
+  Master switch for the JavaScript scripting engine. When `false`, no scripts are loaded or executed. Written by the **Enable scripting** checkbox.
+</ParamField>
+
+<ParamField path="inroom_scripting" type="bool" default="false">
+  When `true`, users at or above `inroom_level` can execute script commands directly in the chat room. Only available when `scripting` is `true`. Written by the **In-room scripting** checkbox.
+</ParamField>
+
+<ParamField path="inroom_level" type="byte" default="4">
+  The minimum `ILevel` value required to run in-room script commands. Maps to the combo box indices as follows:
+
+  | Combo index | Stored value | Level |
+  |---|---|---|
+  | 0 | `1` | Moderator |
+  | 1 | `2` | Administrator |
+  | 2 | `3` | Host |
+  | 3 | `4` | (combo default, resolves to index 3) |
+
+  Written by the **Minimum level** combo box on the scripting tab.
+</ParamField>
+
+<ParamField path="script_can_level" type="bool" default="false">
+  When `true`, scripts are permitted to change user admin levels via the scripting API. Calls `Settings.ScriptCanLevel(bool)` immediately when toggled. Written by the **Script can level** checkbox.
+</ParamField>
+
+<ParamField path="commands" type="bool" default="false">
+  Enables the built-in bot command system. When `false`, no `#`-prefixed commands are processed. Written by the **Enable commands** checkbox.
+</ParamField>
+
+---
+
+## Bot Behavior
+
+These settings are stored under the `settings` sub-key: `HKCU\Software\sb0t\<app-name>\settings`. They are read and written by `commands.Settings` and control the behavior of the built-in bot.
+
+<ParamField path="bot" type="String" default="sb0t">
+  The display name the bot uses when sending automated messages (topic changes, greetings, notices). Written by the **Bot name** text box.
+</ParamField>
+
+<ParamField path="owner" type="String">
+  The owner password. A user types this password in the Ares client to claim `Host` level access. Auto-generated as a 20-character random lowercase string on first run.
+</ParamField>
+
+<ParamField path="adminannounce" type="bool" default="false">
+  When `true`, the bot announces to the room when an admin joins or leaves. Controlled via the `#adminannounce` bot command.
+</ParamField>
+
+<ParamField path="stealth" type="bool" default="false">
+  When `true`, admins enter and leave the room silently — join/part messages are suppressed for admin-level users. Controlled via the `#stealth` bot command.
+</ParamField>
+
+<ParamField path="colors" type="bool" default="false">
+  When `true`, colored text in chat messages is rendered. When `false`, color codes are stripped. Controlled via the `#colors` bot command.
+</ParamField>
+
+<ParamField path="url" type="bool" default="false">
+  Controls whether URL tags are displayed in the room header. Controlled via the `#url` bot command.
+</ParamField>
+
+<ParamField path="mtimeout" type="byte" default="0">
+  Duration in minutes for temporary mutes applied by the `#muzzle` command. A value of `0` means mutes are permanent until manually lifted. Controlled via the `#mtimeout` bot command.
+</ParamField>
+
+<ParamField path="clock" type="bool" default="false">
+  When `true`, the bot periodically announces the current server time in the room. Controlled via the `#clock` bot command.
+</ParamField>
+
+<ParamField path="filtering" type="bool" default="false">
+  Enables the word filter on public chat messages. When `true`, messages matching filter rules are blocked or scrubbed. Controlled via the `#filtering` bot command.
+</ParamField>
+
+<ParamField path="capsmonitoring" type="bool" default="false">
+  When `true`, the bot monitors for excessive capital letters in messages and warns or mutes repeat offenders. Controlled via the `#capsmonitoring` bot command.
+</ParamField>
+
+<ParamField path="idlemonitoring" type="bool" default="false">
+  When `true`, the bot tracks idle users and can issue warnings or take action against users who have been silent for too long. Controlled via the `#idlemonitoring` bot command.
+</ParamField>
+
+<ParamField path="general" type="bool" default="false">
+  Enables the general bot responses (e.g., auto-replies to certain patterns). Controlled via the `#general` bot command.
+</ParamField>
+
+<ParamField path="greetmsg" type="bool" default="false">
+  When `true`, the bot posts a public greeting message to the room when a new user joins. Controlled via the `#greetmsg` bot command.
+</ParamField>
+
+<ParamField path="pmgreetmsg" type="bool" default="false">
+  When `true`, the bot sends a private message greeting to each new user on join. The message text is stored in `pmgreetmsgtext`. Controlled via the `#pmgreetmsg` bot command.
+</ParamField>
+
+<ParamField path="pmgreetmsgtext" type="String">
+  The text of the private message greeting sent when `pmgreetmsg` is `true`. Set via the `#pmgreetmsg` bot command.
+</ParamField>
+
+<ParamField path="roominfo" type="bool" default="false">
+  When `true`, the bot can respond to `#roominfo` requests with statistics about the current room state. Controlled via the `#roominfo` bot command.
+</ParamField>
+
+<ParamField path="lastseen" type="bool" default="false">
+  Enables the `#lastseen <username>` command, which reports when a user was last seen in the room. Controlled via the `#lastseen` bot command.
+</ParamField>
+
+<ParamField path="history" type="bool" default="false">
+  When `true`, the bot tracks and can replay recent chat history for newly joined users. Controlled via the `#history` bot command.
+</ParamField>
+
+<ParamField path="anonmonitoring" type="bool" default="false">
+  When `true`, the bot monitors for anonymous connections and can take automated action. Controlled via the `#anonmonitoring` bot command.
+</ParamField>
+
+<ParamField path="sharemonitoring" type="bool" default="false">
+  When `true`, the bot monitors file-sharing activity in the room. Controlled via the `#sharemonitoring` bot command.
+</ParamField>
+
+<ParamField path="status" type="String">
+  An optional status string displayed by the bot. Set via the `#status` bot command.
+</ParamField>
+
+---
+
+## Settings API
+
+The `core.Settings` class exposes two generic methods used throughout the codebase to read and write registry values. Extensions and scripts should prefer the `IRoom` interface properties where available rather than calling `Settings` directly.
+
+```csharp
+// Read a value from HKCU\Software\sb0t\<app-name>[subkeys]
+T value = Settings.Get<T>(string name, params string[] subkeys);
+
+// Write a value to HKCU\Software\sb0t\<app-name>[subkeys]
+bool ok = Settings.Set(string name, object value, params string[] subkeys);
+```
+
+The supported types for `T` are: `byte`, `short`, `ushort`, `int`, `uint`, `String`, `byte[]`, and `bool`. Strings are stored as UTF-8 encoded binary values; booleans are stored as `DWORD` with `1` = `true` and `0` = `false`.
+
+**Example — reading the port at startup:**
+
+```csharp
+ushort port = Settings.Get<ushort>("port");
+```
+
+**Example — reading a web sub-key:**
+
+```csharp
+bool webEnabled = Settings.Get<bool>("enabled", "web");
+```
+
+**Example — reading a bot-behavior setting (commands namespace):**
+
+```csharp
+// commands.Settings uses the \settings sub-key automatically
+bool announce = commands.Settings.AdminAnnounce;
+```
+
+In JavaScript scripts, room properties are accessed through the `Room` global object provided by the Jurassic host, rather than calling `Settings.Get` directly:
+
+```javascript
+// Access room properties from a script
+var name  = Room.Name;
+var topic = Room.Topic;
+var port  = Room.Port;
+```

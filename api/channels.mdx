@@ -1,0 +1,198 @@
+---
+title: "Channels and Stats — Server Info in sb0t Scripts"
+sidebarTitle: "Channels"
+description: "API reference for the Channels and Stats static objects in sb0t scripts. Enumerate room-search channels and read server statistics."
+---
+
+The `Channels` and `Stats` static objects provide read-only access to the Ares room-search channel list and runtime server statistics. Both objects are always available in scripts but reflect live data from the server at the moment they are read — they do not cache values.
+
+<Note>
+  Both `Channels` and `Stats` expose read-only data. Assigning to any property has no effect.
+</Note>
+
+---
+
+## Channels
+
+The `Channels` object lets scripts query the Ares room-search directory that the server participates in. Before searching, check `Channels.available` and `Channels.enabled` to confirm that channel data is ready to use.
+
+### Properties
+
+<ParamField body="Channels.available" type="boolean">
+  `true` if there are channels currently available to search. Reflects whether the server has received channel list data from the Ares network.
+</ParamField>
+
+<ParamField body="Channels.enabled" type="boolean">
+  `true` if the room-search feature is enabled in the server configuration.
+</ParamField>
+
+---
+
+### `Channels.search(query)`
+
+Searches the channel list for rooms whose names contain the given string (case-insensitive). Returns up to **10** results, sorted by user count descending. Only rooms with fewer than 200 users are included.
+
+<ParamField body="query" type="string" required>
+  The search string to match against room names.
+</ParamField>
+
+**Returns:** `ChannelCollection` — an array-like collection of `Channel` objects. The collection has a `length` property and numeric indexes starting at `0`.
+
+---
+
+### Channel Object
+
+Each item in a `ChannelCollection` is a `Channel` object with the following read-only properties:
+
+<ParamField body="name" type="string">
+  The display name of the room.
+</ParamField>
+
+<ParamField body="topic" type="string">
+  The room's current topic string.
+</ParamField>
+
+<ParamField body="version" type="string">
+  The server software version string reported by the room.
+</ParamField>
+
+<ParamField body="userCount" type="number">
+  The number of users currently in the room.
+</ParamField>
+
+<ParamField body="port" type="number">
+  The data port the room is listening on.
+</ParamField>
+
+<ParamField body="externalIp" type="string">
+  The external IP address of the room as a dotted-decimal string (e.g. `"1.2.3.4"`).
+</ParamField>
+
+<ParamField body="language" type="number">
+  The language code reported by the room.
+</ParamField>
+
+<ParamField body="hashlink" type="string">
+  A pre-generated `arlnk://` link that Ares clients can use to connect directly to this room.
+</ParamField>
+
+---
+
+### Examples
+
+<CodeGroup>
+
+```javascript Search for a Room by Name
+function onPublicText(user, msg) {
+    if (msg.indexOf("!find ") === 0) {
+        var term = msg.substring(6);
+
+        if (!Channels.enabled || !Channels.available) {
+            room.say("Room search is not available right now.");
+            return;
+        }
+
+        var results = Channels.search(term);
+
+        if (results.length === 0) {
+            room.say("No rooms found matching: " + term);
+            return;
+        }
+
+        for (var i = 0; i < results.length; i++) {
+            var ch = results[i];
+            room.say(ch.name + " — " + ch.userCount + " users — " + ch.hashlink);
+        }
+    }
+}
+```
+
+```javascript Log All Matching Channels
+if (Channels.available) {
+    var list = Channels.search("ares");
+    for (var i = 0; i < list.length; i++) {
+        room.say(list[i].name + " (" + list[i].externalIp + ":" + list[i].port + ")");
+    }
+}
+```
+
+</CodeGroup>
+
+---
+
+## Stats
+
+The `Stats` static object exposes runtime counters for the current server session. All values are read-only and update continuously as the server runs.
+
+### Properties
+
+<ParamField body="Stats.userCount" type="number">
+  The number of users currently connected to the server.
+</ParamField>
+
+<ParamField body="Stats.peakUserCount" type="number">
+  The highest number of simultaneous users seen during this session.
+</ParamField>
+
+<ParamField body="Stats.joinCount" type="number">
+  Total number of users who have joined the server since it started.
+</ParamField>
+
+<ParamField body="Stats.partCount" type="number">
+  Total number of users who have left the server since it started.
+</ParamField>
+
+<ParamField body="Stats.messageCount" type="number">
+  Total number of public chat messages received by the server since it started.
+</ParamField>
+
+<ParamField body="Stats.pmCount" type="number">
+  Total number of private messages received by the server since it started.
+</ParamField>
+
+<ParamField body="Stats.dataReceived" type="number">
+  Total bytes of data received by the server since it started.
+</ParamField>
+
+<ParamField body="Stats.dataSent" type="number">
+  Total bytes of data sent by the server since it started.
+</ParamField>
+
+<ParamField body="Stats.floodCount" type="number">
+  Total number of users who have been disconnected for flooding since the server started.
+</ParamField>
+
+<ParamField body="Stats.invalidLoginCount" type="number">
+  Total number of invalid login attempts received since the server started.
+</ParamField>
+
+<ParamField body="Stats.rejectionCount" type="number">
+  Total number of users who were refused entry to the server since it started (e.g. banned, full room).
+</ParamField>
+
+---
+
+### Examples
+
+<CodeGroup>
+
+```javascript Print Stats on Demand
+function onPublicText(user, msg) {
+    if (msg === "!stats") {
+        room.say("Users: " + Stats.userCount + " | Peak: " + Stats.peakUserCount);
+        room.say("Joins: " + Stats.joinCount + " | Parts: " + Stats.partCount);
+        room.say("Messages: " + Stats.messageCount + " | PMs: " + Stats.pmCount);
+        room.say("Data in: " + Stats.dataReceived + " bytes | Data out: " + Stats.dataSent + " bytes");
+    }
+}
+```
+
+```javascript Announce Peak on a Timer
+function onTimer() {
+    if (Stats.userCount >= Stats.peakUserCount) {
+        room.say("New peak user count: " + Stats.peakUserCount + "!");
+    }
+}
+```
+
+</CodeGroup>

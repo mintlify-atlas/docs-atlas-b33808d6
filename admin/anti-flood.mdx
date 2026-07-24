@@ -1,0 +1,183 @@
+---
+title: "Anti-Flood and Rate Limiting in sb0t"
+sidebarTitle: "Anti-Flood"
+description: "How sb0t's anti-flood system detects and handles message flooding, connection flood protection, and per-user rate limiting."
+---
+
+sb0t protects the chatroom from flooding at two independent layers: a **connection-level** gate that silently drops rapid reconnections from the same IP, and a **per-user message-rate** system that tracks packet frequency and repeated content for each logged-in user. Both layers are handled in the main server loop and require no manual configuration beyond enabling the `filtering` setting.
+
+## Layer 1 — Connection Flood Protection
+
+The TCP listener in `core/ServerCore.cs` maintains a dictionary (`_connectFlood`) that maps IP address strings to a `(timestamp, count)` tuple. Every time the server accepts a new socket it increments the counter for that IP:
+
+```csharp
+if (_connectFlood.ContainsKey(ipAddress))
+{
+    var item = _connectFlood[ipAddress];
+    _connectFlood[ipAddress] = (time, item.count + 1);
+}
+else
+{
+    _connectFlood[ipAddress] = (time, 1);
+}
+```
+
+If the same IP has already connected **3 or more times** within the active window, the socket is immediately disposed without creating a user object:
+
+```csharp
+if (_connectFlood[ipAddress].count >= 3)
+{
+    var item = _connectFlood[ipAddress];
+    item.time = time;
+    _connectFlood[ipAddress] = item;
+    sock.Dispose();
+    return;
+}
+```
+
+Stale entries are pruned from `_connectFlood` in the 60-second reset loop (see below). The expiry window is calculated as `Time.Now + 300000` (5 minutes in milliseconds).
+
+## Layer 2 — Per-User Message Rate Limiting
+
+`core/FloodControl.cs` tracks each user's packet frequency inside `IClient.FloodRecord` and makes the flood determination per `TCPMsg` type.
+
+### Packet Counters
+
+For **Regular-level users only** (`client.Level > ILevel.Regular` bypasses all per-packet checks), three counters are maintained per 1-second window:
+
+| Counter | Message type | Threshold |
+|---|---|---|
+| `packet_counter_main` | Public chat (`MSG_CHAT_CLIENT_PUBLIC`), Emote (`MSG_CHAT_CLIENT_EMOTE`) | `> 3` per second |
+| `packet_counter_pm` | Private message (`MSG_CHAT_CLIENT_PVT`) | `> 5` per second |
+| `packet_counter_misc` | All other packet types | `> 8` per second |
+
+When a packet arrives more than 1 000 ms after the previous one, all three counters reset to zero:
+
+```csharp
+if (time > (client.FloodRecord.last_packet_time + 1000))
+{
+    client.FloodRecord.last_packet_time = time;
+    client.FloodRecord.packet_counter_main  = 0;
+    client.FloodRecord.packet_counter_misc  = 0;
+    client.FloodRecord.packet_counter_pm    = 0;
+    return false; // not flooding
+}
+```
+
+### Repeated-Message Detection (`IsTextFlood`)
+
+A global rolling window of the last 8 public/emote messages (across **all** users) tracks per-IP post frequency. A user is considered text-flooding if their IP appears 8 consecutive times in the window — i.e., they alone have saturated the last 8 public messages:
+
+```csharp
+last_typer.Add(userobj.ExternalIP);
+
+if (last_typer.Count > 8)
+    last_typer.RemoveAt(0);
+
+if (last_typer.FindAll(x => x.Equals(userobj.ExternalIP)).Count == 8)
+{
+    last_typer.Clear();
+    if (userobj.Level == ILevel.Regular)
+        return true; // flooding
+}
+```
+
+When this fires, `last_typer` is cleared so the flood trigger resets.
+
+### Duplicate-Content Detection
+
+For public messages and emotes, sb0t also checks whether the last 5 messages from a single user are **byte-for-byte identical**. If `recent_posts` fills to 5 entries and all match the first, the packet is rejected as a flood:
+
+```csharp
+client.FloodRecord.recent_posts.Insert(0, data);
+
+if (client.FloodRecord.recent_posts.Count == 5)
+{
+    client.FloodRecord.recent_posts.RemoveAt(4);
+
+    if (client.FloodRecord.recent_posts
+            .TrueForAll(x => x.SequenceEqual(
+                client.FloodRecord.recent_posts[0])))
+        return true; // flooding
+}
+```
+
+## The `AntiFlood` Exemption List
+
+`commands/AntiFlood.cs` maintains an in-memory list of user IDs (`ushort`) that are **allowed** to bypass the `Flooding()` event check. `AntiFlood.CanFlood(client)` returns `true` when the user's ID is in the list, which causes `ServerEvents.Flooding()` to return `false` (i.e., "not flooding"):
+
+```csharp
+// commands/ServerEvents.cs
+public bool Flooding(IUser client, byte msg)
+{
+    this.last_flood = msg;
+    return !AntiFlood.CanFlood(client);  // false = not flooding
+}
+```
+
+Add a user to the exemption list with `AntiFlood.Add(client)` from a script. The list is reset (`AntiFlood.Reset()`) at server startup.
+
+## The 60-Second Reset Cycle
+
+`FloodControl.Reset()` clears the `last_typer` rolling window. It is called:
+
+- Once at server startup.
+- Every **60 000 ms** (60 seconds) inside the `ServerThread` loop:
+
+```csharp
+if (time > (reset_floods_timer + 60000))
+{
+    reset_floods_timer = time;
+    FloodControl.Reset();
+    Proxies.Updater(Helpers.UnixTime);
+    // also prune stale _connectFlood entries
+}
+```
+
+Individual per-user packet counters (in `FloodRecord`) reset independently on the 1-second packet gap described above.
+
+## Scripting Hooks
+
+Scripts can intercept and override flood handling through two events:
+
+### `onFloodBefore(userobj, msg)`
+
+Called before the server applies its default flood action. Return `false` to suppress the default response (typically a muzzle or notification). Return `true` to allow it.
+
+```js
+function onFloodBefore(userobj, msg) {
+    // msg is the integer TCPMsg value
+    // return false to suppress the default flood action
+    return true;
+}
+```
+
+### `onFlood(userobj)`
+
+Called after the flood has been confirmed and the default action has been applied. Use this for logging or secondary responses:
+
+```js
+function onFlood(userobj) {
+    server.log(userobj.name + " triggered flood detection");
+}
+```
+
+Both event stubs are included in the default script template generated by `JSScript.cs`.
+
+## Relevant Settings
+
+<ParamField body="filtering" type="bool">
+  Master switch for the message flood filter (`Settings.Filtering`). When `false`, `FloodControl.IsFlooding()` still runs, but the word filter and related enforcement steps are skipped. Toggle in the GUI **Settings → Filtering** panel.
+</ParamField>
+
+<ParamField body="capsmonitoring" type="bool">
+  When `true` (`Settings.CapsMonitoring`), the server monitors excessive use of capital letters in messages. Fires a separate monitoring event; does not use `FloodControl` directly.
+</ParamField>
+
+<ParamField body="idlemonitoring" type="bool">
+  When `true` (`Settings.IdleMonitoring`), the server prints a room notice when a user's idle flag changes. Uses `IdleManager`, not the flood system.
+</ParamField>
+
+<Note>
+  All per-user flood counters and the `AntiFlood` exemption list only apply to **Regular-level users**. Users at Moderator level or above skip every `FloodControl` check inside `FloodControl.IsFlooding()` — their messages are never rate-limited or duplicate-checked.
+</Note>

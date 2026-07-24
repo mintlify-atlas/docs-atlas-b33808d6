@@ -1,0 +1,675 @@
+---
+title: "Scripting Event Callbacks in sb0t"
+sidebarTitle: "Events"
+description: "Complete reference of every JavaScript event callback fired by sb0t: join, part, text, PM, commands, admin changes, linking, and timer events."
+---
+
+sb0t calls named global JavaScript functions in your script when server events occur. You define only the events you care about — any event function that is not defined in your script is silently ignored (a no-op stub is registered automatically for every event so the engine never throws a "function not found" error).
+
+Every event receives one or more arguments. Events that can **cancel** the default action do so by returning a falsy value or an empty string, depending on the event type. Events that are purely informational ignore their return value.
+
+---
+
+## User lifecycle
+
+### `onJoinCheck(user)`
+
+```javascript
+function onJoinCheck(user) { return true; }
+```
+
+Fired before a user is allowed to enter the room. Return `false` to reject the connection entirely.
+
+<ParamField body="user" type="JSUser">
+  The connecting user. Because the user has not yet joined, they are not yet in the room user list.
+</ParamField>
+
+**Returns:** `boolean` — `false` rejects the user.
+
+---
+
+### `onJoin(user)`
+
+```javascript
+function onJoin(user) { }
+```
+
+Fired after a user has successfully joined the room. The user is now present in the room user list.
+
+<ParamField body="user" type="JSUser">
+  The user who joined.
+</ParamField>
+
+---
+
+### `onRejected(user)`
+
+```javascript
+function onRejected(user) { }
+```
+
+Fired when a user's join attempt was rejected (e.g. by `onJoinCheck` returning `false`, or by a ban). The user object is a transient snapshot and is not in the room list.
+
+<ParamField body="user" type="JSUser">
+  The rejected user.
+</ParamField>
+
+---
+
+### `onPartBefore(user)`
+
+```javascript
+function onPartBefore(user) { }
+```
+
+Fired just before a user is removed from the room. The user is still in the room list at this point.
+
+<ParamField body="user" type="JSUser">
+  The departing user.
+</ParamField>
+
+---
+
+### `onPart(user)`
+
+```javascript
+function onPart(user) { }
+```
+
+Fired after a user has been removed from the room. The user is no longer in the room list.
+
+<ParamField body="user" type="JSUser">
+  The user who left.
+</ParamField>
+
+---
+
+## Text events
+
+### `onTextBefore(user, text)`
+
+```javascript
+function onTextBefore(user, text) { return text; }
+```
+
+Fired before a public message is broadcast to the room. You can modify the text by returning a different string, or cancel the message entirely by returning an empty string or `null`.
+
+<ParamField body="user" type="JSUser">
+  The user sending the message.
+</ParamField>
+<ParamField body="text" type="string">
+  The raw message text as typed by the user.
+</ParamField>
+
+**Returns:** `string` — the (possibly modified) text to broadcast. Return `""` or `null` to suppress the message.
+
+---
+
+### `onTextAfter(user, text)`
+
+```javascript
+function onTextAfter(user, text) { }
+```
+
+Fired after a public message has been broadcast. The return value is ignored.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="text" type="string">The text that was broadcast.</ParamField>
+
+---
+
+### `onTextReceived(user, text)`
+
+```javascript
+function onTextReceived(user, text) { }
+```
+
+Fired when the server receives a public chat message from the client but **before** the `onTextBefore` processing chain. Use this for logging or side-effects that should not interfere with message flow.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="text" type="string">The raw received text.</ParamField>
+
+---
+
+## Emote events
+
+### `onEmoteBefore(user, text)`
+
+```javascript
+function onEmoteBefore(user, text) { return text; }
+```
+
+Fired before an emote action (`/me ...`) is broadcast. Return a modified string to change the text, or `""` / `null` to cancel.
+
+<ParamField body="user" type="JSUser">The user sending the emote.</ParamField>
+<ParamField body="text" type="string">The emote text.</ParamField>
+
+**Returns:** `string` — modified emote text, or empty to suppress.
+
+---
+
+### `onEmoteAfter(user, text)`
+
+```javascript
+function onEmoteAfter(user, text) { }
+```
+
+Fired after an emote has been broadcast.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="text" type="string">The text that was broadcast.</ParamField>
+
+---
+
+### `onEmoteReceived(user, text)`
+
+```javascript
+function onEmoteReceived(user, text) { }
+```
+
+Fired when the server first receives an emote from the client, before the `onEmoteBefore` chain.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="text" type="string">The raw received emote text.</ParamField>
+
+---
+
+## PM events
+
+### `onPMBefore(user, target, pm)`
+
+```javascript
+function onPMBefore(user, target, pm) { return true; }
+```
+
+Fired before a private message is delivered. Return `false` to cancel delivery.
+
+<ParamField body="user" type="JSUser">The user sending the PM.</ParamField>
+<ParamField body="target" type="JSUser">The user receiving the PM.</ParamField>
+<ParamField body="pm" type="JSPM">A PM object (carries the message text and other metadata).</ParamField>
+
+**Returns:** `boolean` — `false` cancels the PM.
+
+---
+
+### `onPM(user, target)`
+
+```javascript
+function onPM(user, target) { }
+```
+
+Fired after a private message has been delivered.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="target" type="JSUser">The recipient.</ParamField>
+
+---
+
+### `onBotPM(user, text)`
+
+```javascript
+function onBotPM(user, text) { }
+```
+
+Fired when a user sends a PM directly to the bot (the room bot name).
+
+<ParamField body="user" type="JSUser">The user who messaged the bot.</ParamField>
+<ParamField body="text" type="string">The PM text.</ParamField>
+
+---
+
+## User state
+
+### `onNick(user, newName)`
+
+```javascript
+function onNick(user, newName) { return true; }
+```
+
+Fired when a user requests a nickname change. Return `false` to deny the nick change.
+
+<ParamField body="user" type="JSUser">The user requesting the name change.</ParamField>
+<ParamField body="newName" type="string">The requested new nickname.</ParamField>
+
+**Returns:** `boolean` — `false` denies the name change.
+
+---
+
+### `onAvatar(user)`
+
+```javascript
+function onAvatar(user) { return true; }
+```
+
+Fired when a user sends a new avatar image. Return `false` to reject it.
+
+<ParamField body="user" type="JSUser">The user sending the avatar.</ParamField>
+
+**Returns:** `boolean` — `false` rejects the avatar.
+
+---
+
+### `onScribbleCheck(user, isPM)`
+
+```javascript
+function onScribbleCheck(user, isPM) { return true; }
+```
+
+Fired when a user attempts to send a scribble (drawing). Return `false` to block it.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="isPM" type="boolean">`true` if the scribble is a PM scribble.</ParamField>
+
+**Returns:** `boolean` — `false` blocks the scribble.
+
+---
+
+### `onPersonalMessage(user, text)`
+
+```javascript
+function onPersonalMessage(user, text) { return true; }
+```
+
+Fired when a user updates their personal status message. Return `false` to reject the update.
+
+<ParamField body="user" type="JSUser">The user updating their status.</ParamField>
+<ParamField body="text" type="string">The new personal message text.</ParamField>
+
+**Returns:** `boolean` — `false` rejects the update.
+
+---
+
+### `onIdled(user)`
+
+```javascript
+function onIdled(user) { }
+```
+
+Fired when a user transitions to idle status.
+
+<ParamField body="user" type="JSUser">The user who became idle.</ParamField>
+
+---
+
+### `onUnidled(user, seconds)`
+
+```javascript
+function onUnidled(user, seconds) { }
+```
+
+Fired when an idle user returns to active status.
+
+<ParamField body="user" type="JSUser">The user who returned from idle.</ParamField>
+<ParamField body="seconds" type="number">How many seconds the user was idle.</ParamField>
+
+---
+
+## Admin and authentication
+
+### `onLoginGranted(user)`
+
+```javascript
+function onLoginGranted(user) { }
+```
+
+Fired when a user successfully logs in with an admin password.
+
+<ParamField body="user" type="JSUser">The user who logged in.</ParamField>
+
+---
+
+### `onInvalidLoginAttempt(user)`
+
+```javascript
+function onInvalidLoginAttempt(user) { }
+```
+
+Fired when a user submits an incorrect admin password.
+
+<ParamField body="user" type="JSUser">The user who made the failed attempt.</ParamField>
+
+---
+
+### `onLogout(user)`
+
+```javascript
+function onLogout(user) { }
+```
+
+Fired when a user voluntarily logs out of their admin session.
+
+<ParamField body="user" type="JSUser">The user who logged out.</ParamField>
+
+---
+
+### `onAdminLevelChanged(user)`
+
+```javascript
+function onAdminLevelChanged(user) { }
+```
+
+Fired whenever a user's admin level changes (promotion or demotion).
+
+<ParamField body="user" type="JSUser">The user whose level changed. Check `user.level` for the new value.</ParamField>
+
+---
+
+### `onRegistering(user)`
+
+```javascript
+function onRegistering(user) { return true; }
+```
+
+Fired when a user attempts to register a name. Return `false` to deny registration.
+
+<ParamField body="user" type="JSUser">The user attempting to register.</ParamField>
+
+**Returns:** `boolean` — `false` blocks the registration.
+
+---
+
+### `onRegistered(user)`
+
+```javascript
+function onRegistered(user) { }
+```
+
+Fired after a user has successfully registered their name.
+
+<ParamField body="user" type="JSUser">The newly registered user.</ParamField>
+
+---
+
+### `onUnregistered(user)`
+
+```javascript
+function onUnregistered(user) { }
+```
+
+Fired when a user's name registration is removed.
+
+<ParamField body="user" type="JSUser">The user who was unregistered.</ParamField>
+
+---
+
+## Room events
+
+### `onVroomJoinCheck(user, vroom)`
+
+```javascript
+function onVroomJoinCheck(user, vroom) { return true; }
+```
+
+Fired when a user tries to enter a virtual room (vroom). Return `false` to deny entry.
+
+<ParamField body="user" type="JSUser">The user requesting to join the vroom.</ParamField>
+<ParamField body="vroom" type="number">The vroom number (0–65535).</ParamField>
+
+**Returns:** `boolean` — `false` blocks entry.
+
+---
+
+### `onVroomJoin(user)`
+
+```javascript
+function onVroomJoin(user) { }
+```
+
+Fired after a user has successfully entered a virtual room. Check `user.vroom` for which room they joined.
+
+<ParamField body="user" type="JSUser">The user who changed vrooms.</ParamField>
+
+---
+
+### `onCommand(user, cmd, target, args)`
+
+```javascript
+function onCommand(user, cmd, target, args) { }
+```
+
+Fired when a user types a `/command`. Built-in script management commands are intercepted before this event fires.
+
+<ParamField body="user" type="JSUser">The user who issued the command.</ParamField>
+<ParamField body="cmd" type="string">The full command string (lowercase, without the leading `/`).</ParamField>
+<ParamField body="target" type="JSUser | null">The targeted user, if any was resolved from the command. `null` otherwise.</ParamField>
+<ParamField body="args" type="string">Any trailing arguments after the command and target.</ParamField>
+
+---
+
+### `onHelp(user)`
+
+```javascript
+function onHelp(user) { }
+```
+
+Fired when a user types `/help`. Use `print(user, "...")` here to add your own help lines. If the user is at or above `ScriptLevel`, the built-in scripting help lines are also printed.
+
+<ParamField body="user" type="JSUser">The user who requested help.</ParamField>
+
+---
+
+### `onFileReceived(user, filename)`
+
+```javascript
+function onFileReceived(user, filename) { }
+```
+
+Fired when a user sends a file to the room.
+
+<ParamField body="user" type="JSUser">The sender.</ParamField>
+<ParamField body="filename" type="string">The name of the file as reported by the client.</ParamField>
+
+---
+
+### `onIgnoring(user, target)`
+
+```javascript
+function onIgnoring(user, target) { return true; }
+```
+
+Fired when a user attempts to add another user to their ignore list. Return `false` to prevent the ignore.
+
+<ParamField body="user" type="JSUser">The user doing the ignoring.</ParamField>
+<ParamField body="target" type="JSUser">The user being ignored.</ParamField>
+
+**Returns:** `boolean` — `false` blocks the ignore action.
+
+---
+
+### `onIgnoredStateChanged(user, target, ignored)`
+
+```javascript
+function onIgnoredStateChanged(user, target, ignored) { }
+```
+
+Fired after a user's ignore state for another user has changed.
+
+<ParamField body="user" type="JSUser">The user whose ignore list changed.</ParamField>
+<ParamField body="target" type="JSUser">The user affected.</ParamField>
+<ParamField body="ignored" type="boolean">`true` if `target` was added to the ignore list; `false` if removed.</ParamField>
+
+---
+
+## Flood events
+
+### `onFloodBefore(user, msgByte)`
+
+```javascript
+function onFloodBefore(user, msgByte) { return true; }
+```
+
+Fired when a flood condition is detected for a user, before the flood action is taken. Return `false` to cancel the flood action.
+
+<ParamField body="user" type="JSUser">The flooding user.</ParamField>
+<ParamField body="msgByte" type="number">The message-type byte that triggered the flood detection.</ParamField>
+
+**Returns:** `boolean` — `false` suppresses the flood action.
+
+---
+
+### `onFlood(user)`
+
+```javascript
+function onFlood(user) { }
+```
+
+Fired after a flood action has been applied to the user.
+
+<ParamField body="user" type="JSUser">The user who triggered flood protection.</ParamField>
+
+---
+
+### `onProxyDetected(user)`
+
+```javascript
+function onProxyDetected(user) { return false; }
+```
+
+Fired when the server detects that a connecting user may be using a proxy. The **default** stub returns `false` (allow anyway), because the built-in proxy check can produce false positives. Return `true` to reject the connection.
+
+<ParamField body="user" type="JSUser">The connecting user.</ParamField>
+
+**Returns:** `boolean` — `true` rejects the connection.
+
+---
+
+## Linking events
+
+### `onLinked()`
+
+```javascript
+function onLinked() { }
+```
+
+Fired when this server successfully establishes a link hub connection.
+
+---
+
+### `onUnlinked()`
+
+```javascript
+function onUnlinked() { }
+```
+
+Fired when the link hub connection drops.
+
+---
+
+### `onLinkError(msg)`
+
+```javascript
+function onLinkError(msg) { }
+```
+
+Fired when a link error occurs.
+
+<ParamField body="msg" type="number">An integer error code representing the link error type.</ParamField>
+
+---
+
+### `onLeafJoin(leaf)`
+
+```javascript
+function onLeafJoin(leaf) { }
+```
+
+Fired when a leaf server connects to this hub.
+
+<ParamField body="leaf" type="JSLeaf">The leaf server that connected.</ParamField>
+
+---
+
+### `onLeafPart(leaf)`
+
+```javascript
+function onLeafPart(leaf) { }
+```
+
+Fired when a leaf server disconnects from this hub.
+
+<ParamField body="leaf" type="JSLeaf">The leaf server that disconnected.</ParamField>
+
+---
+
+### `onLinkedAdminDisabled(leaf, user)`
+
+```javascript
+function onLinkedAdminDisabled(leaf, user) { }
+```
+
+Fired when a linked user's admin privileges are revoked via the hub.
+
+<ParamField body="leaf" type="JSLeaf">The leaf the user belongs to.</ParamField>
+<ParamField body="user" type="JSUser">The user whose admin was disabled.</ParamField>
+
+---
+
+## Timer and maintenance events
+
+### `onTimer()`
+
+```javascript
+function onTimer() { }
+```
+
+Fired **once per second** for every loaded script. Use this for polling, countdowns, or any recurring task that does not require fine-grained precision.
+
+<Tip>
+For intervals shorter than one second, or for one-shot delayed actions, use the `Timer` constructor object instead of `onTimer`.
+</Tip>
+
+---
+
+### `onBansAutoCleared()`
+
+```javascript
+function onBansAutoCleared() { }
+```
+
+Fired when the server automatically clears its ban list (e.g. on a scheduled auto-clear).
+
+---
+
+## Practical examples
+
+### Join greeter
+
+```javascript
+function onJoin(user) {
+    print(user, "Welcome to the room, " + user.name + "! Type /help for commands.");
+}
+```
+
+### Text censor
+
+```javascript
+var banned = ["badword", "otherword"];
+
+function onTextBefore(user, text) {
+    var lower = stripColors(text).toLowerCase();
+    for (var i = 0; i < banned.length; i++) {
+        if (lower.indexOf(banned[i]) !== -1) {
+            print(user, "Your message contained a banned word and was not sent.");
+            return ""; // cancel the message
+        }
+    }
+    return text; // pass through unchanged
+}
+```
+
+### Command handler
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "roll") {
+        var result = Math.floor(Math.random() * 6) + 1;
+        print(user.name + " rolled a " + result + "!");
+        return;
+    }
+
+    if (cmd === "topic" && user.level >= 1) {
+        Room.topic = args;
+        print("Topic updated by " + user.name + ": " + args);
+    }
+}
+```

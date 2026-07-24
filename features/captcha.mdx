@@ -1,0 +1,104 @@
+---
+title: "Captcha Challenge for Joining Users"
+sidebarTitle: "Captcha"
+description: "Configure sb0t's join captcha to challenge new users with an image-based word puzzle before they can participate in the room."
+---
+
+sb0t includes a built-in captcha system that presents joining users with a text-art word puzzle before they are allowed to participate in the room. This is a lightweight defence against automated bots and join-flooding scripts, requiring a human to read and type a short word before their first message is relayed to other room members.
+
+## How the Captcha Works
+
+### Initialisation
+
+When the server starts, `Captcha.Initialize()` loads the word list embedded in the captcha assembly (`captcha/Resources/4words.txt`) — a whitespace-separated list of common four-letter words. Only words that are **exactly 4 characters long** are retained:
+
+```csharp
+words = new List<String>(
+    Resource1._4words.Split(new String[] { " " },
+    StringSplitOptions.RemoveEmptyEntries));
+words.RemoveAll(x => x.Length != 4);
+```
+
+### Challenge Generation
+
+When a user needs to be challenged, `Captcha.Create()` picks a random word from the list and renders it as a 5-row ASCII/text-art image. Each row is prefixed with the colour-code byte `\x0005` so the Ares client renders it in a specific colour. The result is a `CaptchaItem` with:
+
+- `Word` — the correct answer string
+- `Lines` — a `String[5]` array, each element being one row of the text-art rendering
+
+The challenge is sent to the user as a sequence of `NOSUCH` packets (for web clients) or `NoSuch` TCP packets (for Ares desktop clients), surrounded by blank lines to visually separate it from chat:
+
+```csharp
+CaptchaItem cap = Captcha.Create();
+client.CaptchaWord = cap.Word;
+Events.CaptchaSending(client);
+
+client.QueuePacket(WebOutbound.NoSuchTo(client, String.Empty));
+foreach (String str in cap.Lines)
+    client.QueuePacket(WebOutbound.NoSuchTo(client, str));
+client.QueuePacket(WebOutbound.NoSuchTo(client, String.Empty));
+```
+
+### Answer Verification
+
+Once the challenge is displayed, the user's very next public message is interpreted as their answer attempt. The comparison is **case-insensitive** and strips Ares colour codes before comparing:
+
+```csharp
+if (client.CaptchaWord.ToUpper() != Helpers.StripColors(text).Trim().ToUpper())
+```
+
+- **Wrong answer** — a new challenge is generated and sent; the `Events.CaptchaReply` event fires with the incorrect text.
+- **Correct answer** — `IUser.Captcha` is set to `true`, the user is unquarantined if applicable, the GUID is recorded in the persistent passed-captcha database, and `CaptchaManager.AddCaptcha(client)` is called.
+
+## Persistent Pass-Through (GUID Memory)
+
+Once a user passes the captcha their client GUID is written to an SQLite database at:
+
+```
+%AppData%\sb0t\<app-name>\Dat\captcha.dat
+```
+
+`CaptchaManager.HasCaptcha(client)` checks this database on every new connection. If the user's GUID is found **and** the stored timestamp is within the last **14 days** (1,209,600 seconds), the captcha is skipped automatically. The record's timestamp is refreshed on each visit within that window (the 7-day rolling refresh), meaning regular visitors never see the captcha again. Records older than 14 days are purged at server startup.
+
+## Enabling the Captcha
+
+Toggle captcha in the sb0t GUI. When captcha is **enabled**:
+
+```csharp
+client.Captcha = !Settings.Get<bool>("captcha");
+
+if (!client.Captcha)
+    client.Captcha = CaptchaManager.HasCaptcha(client);
+```
+
+A new user who hasn't passed before starts with `Captcha = false`. The `captcha_mode` setting controls what happens next:
+
+| `captcha_mode` value | Behaviour |
+|---|---|
+| `0` | The user joins normally but cannot send messages until they pass (non-quarantine mode) |
+| `1` | The user is **quarantined** on join — they appear in the room but are invisible to other users until they pass |
+
+Localhost connections and room owners always bypass the captcha and are set `Captcha = true`, `Quarantined = false` immediately.
+
+## Quarantined Users
+
+When `captcha_mode` is `1`, a user who has not yet passed arrives in a quarantined state (`IUser.Quarantined = true`). They:
+
+- Receive the challenge image via `NOSUCH` packets
+- Are **not** announced to other room members (no `JOIN` broadcast is sent)
+- Receive only a minimal user list (empty — `USERLIST_END` is sent immediately)
+- Cannot send public messages, emotes, or private messages to other users
+
+When the correct word is entered, `client.Unquarantine()` is called, which triggers the normal join broadcast and populates the full user list for the newly-admitted user.
+
+## Scripting Integration
+
+| Event | When it fires |
+|---|---|
+| `Events.CaptchaSending(client)` | Just before each challenge image is sent to the user |
+| `Events.CaptchaReply(client, text)` | When the user sends a reply (correct **or** incorrect); the `text` parameter is the raw typed string |
+| `Events.Joining(client)` | Fires during the login sequence **before** the captcha check is applied; returning `false` in a script rejects the user before a captcha is ever sent |
+
+<Tip>
+Combine the captcha with a bot greet message using `Events.Joined` so that users who pass appear to receive a warm welcome explaining the rules. The greet fires after the user is fully admitted, making it clear the challenge is over and they can now chat freely.
+</Tip>

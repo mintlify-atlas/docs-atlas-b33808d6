@@ -1,0 +1,738 @@
+---
+title: "Static Script Objects: Room, Users, Link, and More"
+sidebarTitle: "Objects"
+description: "Reference for the static JavaScript objects available in every sb0t script: Room, Users, Link, Crypto, Stats, File, Channels, Base64, Zip, Registry, Hashlink, and Spelling."
+---
+
+sb0t injects a collection of singleton objects into every script engine alongside the global functions. These objects expose server state and utilities as simple property/method APIs. They are available at any time — inside event handlers, `onTimer`, or top-level script code — with no import needed.
+
+---
+
+## `Room`
+
+Provides access to room-level configuration and broadcast helpers. Backed by `JSRoom.cs`.
+
+### Properties
+
+| Property | Type | Access | Description |
+|---|---|---|---|
+| `Room.version` | `number` | read-only | Current scripting API version integer (e.g. `5009`). |
+| `Room.botName` | `string` | read-only | The display name of the room bot. |
+| `Room.customNames` | `boolean` | read/write | Whether custom display names (`user.customName`) are enabled for the room. |
+| `Room.externalIp` | `string` | read-only | The server's external IP address as a string. |
+| `Room.hashlink` | `string` | read-only | An `arlnk://` prefixed hashlink for this room. |
+| `Room.name` | `string` | read-only | The room name. |
+| `Room.port` | `number` | read-only | The port the server is listening on. |
+| `Room.startTime` | `number` | read-only | Unix-style timestamp (server time) of when the room started. |
+| `Room.topic` | `string` | read/write | The room topic. Assign to update it for all users. |
+
+### Methods
+
+#### `Room.setUrl(addr, text)`
+
+Set the room's shared URL, displayed to all users.
+
+<ParamField body="addr" type="string">The URL address.</ParamField>
+<ParamField body="text" type="string">The link display text.</ParamField>
+
+If both arguments are empty or null, the URL is cleared.
+
+#### `Room.clearUrl()`
+
+Clear the room's shared URL.
+
+```javascript
+function onLoad() {
+    Room.topic = "Welcome! Type /help for commands.";
+    Room.setUrl("https://example.com", "Visit our website");
+}
+```
+
+---
+
+## `Users`
+
+Provides iteration over user pools. Backed by `JSUsers.cs`.
+
+### Methods
+
+Each method accepts a callback function that receives a user (or banned user / record) object for every entry in the pool. Iteration is synchronous.
+
+#### `Users.local(fn)`
+
+Iterate over all locally connected users (Ares and web clients on this server instance).
+
+<ParamField body="fn" type="function(user: JSUser)">Called once per local user.</ParamField>
+
+#### `Users.linked(fn)`
+
+Iterate over all users connected through linked leaf servers. Only available when the server is linked.
+
+<ParamField body="fn" type="function(user: JSUser)">Called once per linked user.</ParamField>
+
+#### `Users.banned(fn)`
+
+Iterate over the current ban list.
+
+<ParamField body="fn" type="function(banned: JSBannedUser)">Called once per ban entry. The `JSBannedUser` object has: `name`, `version`, `guid`, `externalIp`, `localIp`, `port` (all read-only), and an `unban()` method.</ParamField>
+
+#### `Users.records(fn)`
+
+Iterate over session records (connection history).
+
+<ParamField body="fn" type="function(record: JSRecord)">Called once per record. The `JSRecord` object has: `name`, `externalIp`, `localIp`, `version`, `port`, `guid`, `dns`, `joinTime` (all read-only), and a `ban()` method.</ParamField>
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "count") {
+        var count = 0;
+        Users.local(function(u) { count++; });
+        print(user, "Local users: " + count);
+    }
+
+    if (cmd === "listbans" && user.level >= 2) {
+        Users.banned(function(b) {
+            print(user, b.name + " (" + b.externalIp + ")");
+        });
+    }
+}
+```
+
+---
+
+## `Link`
+
+Provides access to the hub link and connected leaf servers. Backed by `JSLink.cs`.
+
+### Properties
+
+| Property | Type | Access | Description |
+|---|---|---|---|
+| `Link.linked` | `boolean` | read-only | `true` if this server is currently linked to a hub. |
+| `Link.name` | `string \| null` | read-only | The room name of the hub, or `null` if not linked. |
+| `Link.externalIp` | `string \| null` | read-only | External IP of the hub, or `null` if not linked. |
+| `Link.port` | `number` | read-only | Port of the hub connection, or `-1` if not linked. |
+| `Link.hashlink` | `string \| null` | read-only | An `arlnk://` hashlink for the hub room, or `null` if not linked. |
+
+### Methods
+
+#### `Link.leaves(fn)`
+
+Iterate over all currently connected leaf servers.
+
+<ParamField body="fn" type="function(leaf: JSLeaf)">Called once per connected leaf.</ParamField>
+
+#### `Link.leaf(name)`
+
+Find a specific leaf server by name or name prefix.
+
+<ParamField body="name" type="string">The leaf name to search for.</ParamField>
+
+**Returns:** `JSLeaf | null`
+
+#### `Link.connect(address)`
+
+Initiate a link connection to the specified hub address.
+
+<ParamField body="address" type="string">The hub address string.</ParamField>
+
+#### `Link.disconnect()`
+
+Disconnect from the current hub.
+
+### JSLeaf object
+
+Leaf objects are passed to `onLeafJoin`, `onLeafPart`, `onLinkedAdminDisabled`, and returned by `Link.leaf()` / `Link.leaves()`.
+
+| Property | Type | Description |
+|---|---|---|
+| `leaf.name` | `string` | The leaf's room name. |
+| `leaf.externalIp` | `string` | The leaf's external IP. |
+| `leaf.port` | `number` | The leaf's port. |
+| `leaf.hashlink` | `string` | An `arlnk://` hashlink for the leaf room. |
+
+| Method | Description |
+|---|---|
+| `leaf.print(text)` | Send a system message to all users on the leaf. |
+| `leaf.print(vroom, text)` | Send to a specific vroom on the leaf. |
+| `leaf.printAdmins(level, text)` | Send to users at or above `level` (1=mod, 2=admin, 3=host) on the leaf. |
+| `leaf.users(fn)` | Iterate over users on this leaf. |
+| `leaf.user(name)` | Find a user on this leaf by name or name prefix. Returns `JSUser \| null`. |
+| `leaf.sendText(sender, text)` | Broadcast a public chat line to the leaf. |
+| `leaf.sendEmote(sender, text)` | Broadcast an emote line to the leaf. |
+
+```javascript
+function onLeafJoin(leaf) {
+    print("Leaf connected: " + leaf.name + " (" + leaf.hashlink + ")");
+}
+
+function onCommand(user, cmd, target, args) {
+    if (cmd === "leafusers") {
+        var l = Link.leaf(args);
+        if (!l) { print(user, "Leaf not found."); return; }
+        l.users(function(u) { print(user, u.name); });
+    }
+}
+```
+
+---
+
+## `Crypto`
+
+Hashing utilities. Backed by `JSCrypto.cs`.
+
+### Methods
+
+#### `Crypto.md5hash(text)`
+
+Compute an MD5 hash of the UTF-8 encoded text.
+
+<ParamField body="text" type="string">The input string.</ParamField>
+
+**Returns:** `JSCryptoResult | null`
+
+#### `Crypto.sha1hash(text)`
+
+Compute a SHA-1 hash of the UTF-8 encoded text.
+
+<ParamField body="text" type="string">The input string.</ParamField>
+
+**Returns:** `JSCryptoResult | null`
+
+### JSCryptoResult object
+
+| Method | Returns | Description |
+|---|---|---|
+| `result.toHex()` | `string` | Uppercase hex representation of the hash bytes (e.g. `"5D41402ABC4B2..."`) |
+| `result.toBase64()` | `string` | Base64 encoded representation of the hash bytes. |
+| `result.toArray()` | `Array<number>` | Array of byte integers. |
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "md5") {
+        var hash = Crypto.md5hash(args);
+        print(user, "MD5: " + hash.toHex());
+    }
+}
+```
+
+---
+
+## `Stats`
+
+Read-only server statistics. Backed by `JSStats.cs`.
+
+| Property | Type | Description |
+|---|---|---|
+| `Stats.userCount` | `number` | Current number of connected users. |
+| `Stats.peakUserCount` | `number` | Peak simultaneous user count since the server started. |
+| `Stats.joinCount` | `number` | Total join events since the server started. |
+| `Stats.partCount` | `number` | Total part events since the server started. |
+| `Stats.rejectionCount` | `number` | Total rejected connection attempts. |
+| `Stats.messageCount` | `number` | Total public messages sent. |
+| `Stats.pmCount` | `number` | Total private messages sent. |
+| `Stats.floodCount` | `number` | Total flood events triggered. |
+| `Stats.invalidLoginCount` | `number` | Total failed admin login attempts. |
+| `Stats.dataReceived` | `number` | Total bytes received by the server. |
+| `Stats.dataSent` | `number` | Total bytes sent by the server. |
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "stats") {
+        print(user, "Users: " + Stats.userCount + " (peak: " + Stats.peakUserCount + ")");
+        print(user, "Messages: " + Stats.messageCount + ", PMs: " + Stats.pmCount);
+    }
+}
+```
+
+---
+
+## `File`
+
+Sandboxed file I/O scoped to the script's own `data/` subfolder. Backed by `JSFile.cs`.
+
+All file operations are restricted to `%AppData%\sb0t\<app-name>\Scripting\<scriptName>\data\`. Filenames must not contain `..`, `/`, `\`, or spaces.
+
+### Methods
+
+#### `File.load(filename)`
+
+Read the entire contents of a file as a UTF-8 string.
+
+<ParamField body="filename" type="string">The filename inside the `data/` folder.</ParamField>
+
+**Returns:** `string | null` — file contents, or `null` if the file does not exist or on error.
+
+#### `File.save(filename, content)`
+
+Write (overwrite) a file with the given content, encoded as UTF-8. Creates the `data/` folder if it does not exist.
+
+<ParamField body="filename" type="string">Target filename.</ParamField>
+<ParamField body="content" type="string">The content to write.</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+#### `File.append(filename, content)`
+
+Append content to a file. Creates the file and `data/` folder if they do not exist.
+
+<ParamField body="filename" type="string">Target filename.</ParamField>
+<ParamField body="content" type="string">The content to append.</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+#### `File.exists(filename)`
+
+Check whether a file exists in the `data/` folder.
+
+<ParamField body="filename" type="string">The filename to check.</ParamField>
+
+**Returns:** `boolean`
+
+#### `File.kill(filename)`
+
+Delete a file from the `data/` folder.
+
+<ParamField body="filename" type="string">The filename to delete.</ParamField>
+
+**Returns:** `boolean` — `true` if the file was deleted.
+
+```javascript
+function onLoad() {
+    if (!File.exists("config.txt")) {
+        File.save("config.txt", "greeting=Hello!\n");
+    }
+    var cfg = File.load("config.txt");
+    print("Config loaded: " + cfg);
+}
+```
+
+---
+
+## `Channels`
+
+Access to the Ares channel directory. Backed by `JSChannels.cs`.
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Channels.available` | `boolean` | Whether the channel list has been fetched and is available. |
+| `Channels.enabled` | `boolean` | Whether the channel listing feature is enabled on this server. |
+
+### Methods
+
+#### `Channels.search(query)`
+
+Search the channel list for rooms whose name contains `query` (case-insensitive). Returns at most 10 results with fewer than 200 users, sorted by user count descending.
+
+<ParamField body="query" type="string">Search string.</ParamField>
+
+**Returns:** `JSChannelCollection` — an iterable collection of `JSChannel` objects. Each channel has a `name` property and a `users` property (user count).
+
+```javascript
+function onCommand(user, cmd, target, args) {
+    if (cmd === "find") {
+        var results = Channels.search(args);
+        results.forEach(function(ch) {
+            print(user, ch.name + " (" + ch.users + " users)");
+        });
+    }
+}
+```
+
+---
+
+## `Base64`
+
+Base64 encode and decode strings. Backed by `JSBase64.cs`.
+
+### Methods
+
+#### `Base64.encode(text)`
+
+Encode a UTF-8 string to Base64.
+
+<ParamField body="text" type="any">The value to encode. `null` / `undefined` returns `null`.</ParamField>
+
+**Returns:** `string | null`
+
+#### `Base64.decode(text)`
+
+Decode a Base64 string back to UTF-8.
+
+<ParamField body="text" type="string">A valid Base64 string.</ParamField>
+
+**Returns:** `string | null` — decoded string, or `null` on invalid input.
+
+```javascript
+var encoded = Base64.encode("Hello, world!");  // "SGVsbG8sIHdvcmxkIQ=="
+var decoded = Base64.decode(encoded);           // "Hello, world!"
+```
+
+---
+
+## `Zip`
+
+String compression via the server's compression provider. Backed by `JSZip.cs`.
+
+<Note>
+The `Zip` object operates on raw binary-encoded strings via `Encoding.Default`. It is primarily useful for compressing data before storing it with `File.save()` or transmitting it through an HTTP request.
+</Note>
+
+### Methods
+
+#### `Zip.compress(text)`
+
+Compress a UTF-8 string and return the result as a binary-encoded string.
+
+<ParamField body="text" type="any">The input text.</ParamField>
+
+**Returns:** `string | null`
+
+#### `Zip.uncompress(text)`
+
+Decompress a binary-encoded compressed string back to UTF-8.
+
+<ParamField body="text" type="any">The compressed binary string.</ParamField>
+
+**Returns:** `string | null`
+
+---
+
+## `Registry`
+
+Persistent key/value storage backed by the Windows Registry under `HKCU\Software\sb0t\<app-name>\scripting\<scriptName>`. Backed by `JSRegistry.cs`. Values are stored as strings; numeric values are coerced to strings automatically.
+
+<Warning>
+Registry storage is scoped per-script. Each script can only read and write its own keys. No cross-script Registry access is possible.
+</Warning>
+
+### Methods
+
+#### `Registry.exists(key)`
+
+Check if a registry key exists for this script.
+
+<ParamField body="key" type="string">Key name.</ParamField>
+
+**Returns:** `boolean`
+
+#### `Registry.getValue(key)`
+
+Retrieve the stored string value for a key.
+
+<ParamField body="key" type="string">Key name.</ParamField>
+
+**Returns:** `string | null` — the stored value, or `null` if not found.
+
+#### `Registry.setValue(key, value)`
+
+Write a string, number, or double value under the given key.
+
+<ParamField body="key" type="string">Key name.</ParamField>
+<ParamField body="value" type="string | number">The value to store.</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+#### `Registry.deleteValue(key)`
+
+Delete a specific key.
+
+<ParamField body="key" type="string">Key name.</ParamField>
+
+**Returns:** `boolean` — `true` if the key existed and was deleted.
+
+#### `Registry.getKeys()`
+
+Retrieve all key names stored for this script.
+
+**Returns:** `JSRegistryKeyCollection` — an iterable collection of key name strings.
+
+#### `Registry.clear()`
+
+Delete all stored keys for this script.
+
+**Returns:** `boolean` — `true` on success.
+
+```javascript
+function onLoad() {
+    if (!Registry.exists("joinCount")) {
+        Registry.setValue("joinCount", 0);
+    }
+}
+
+function onJoin(user) {
+    var n = parseInt(Registry.getValue("joinCount"), 10) + 1;
+    Registry.setValue("joinCount", n);
+}
+```
+
+---
+
+## `Hashlink`
+
+Encode and decode Ares `arlnk://` hashlinks. Backed by `JSHashlink.cs`.
+
+### Methods
+
+#### `Hashlink.encode(obj)`
+
+Encode a room descriptor object into an `arlnk://` hashlink string.
+
+<ParamField body="obj" type="object">
+  A plain JS object with three properties:
+  - `ip` (`string`) — the room's IP address.
+  - `port` (`number`) — the room's port.
+  - `name` (`string`) — the room name.
+</ParamField>
+
+**Returns:** `string | null` — the `arlnk://` encoded string, or `null` on failure.
+
+#### `Hashlink.decode(link)`
+
+Decode an `arlnk://` hashlink into its components.
+
+<ParamField body="link" type="string">The hashlink string to decode (with or without the `arlnk://` prefix).</ParamField>
+
+**Returns:** `JSHashlinkResult | null`
+
+### JSHashlinkResult object
+
+| Property | Type | Description |
+|---|---|---|
+| `result.name` | `string` | Room name. |
+| `result.ip` | `string` | Room IP address. |
+| `result.port` | `number` | Room port. |
+
+```javascript
+var link = Hashlink.encode({ ip: "1.2.3.4", port: 1234, name: "MyRoom" });
+print("Hashlink: " + link);
+
+var decoded = Hashlink.decode(link);
+if (decoded) {
+    print("Room: " + decoded.name + " at " + decoded.ip + ":" + decoded.port);
+}
+```
+
+---
+
+## `Spelling`
+
+Spell-checking utilities backed by the server's spell engine. Backed by `JSSpelling.cs`.
+
+### Methods
+
+#### `Spelling.check(text)`
+
+Check whether all words in a text are correctly spelled.
+
+<ParamField body="text" type="string">The text to check.</ParamField>
+
+**Returns:** `string | null` — the first misspelled word found, or `null` if all words are correct (or if the spell engine is not available).
+
+#### `Spelling.confirm(word)`
+
+Check whether a single word is correctly spelled.
+
+<ParamField body="word" type="string">A single word to check.</ParamField>
+
+**Returns:** `boolean` — `true` if the word is correctly spelled.
+
+#### `Spelling.suggest(word)`
+
+Get spelling suggestions for a word.
+
+<ParamField body="word" type="string">The misspelled word.</ParamField>
+
+**Returns:** `JSSpellingSuggestionCollection` — an iterable collection of suggested replacement strings.
+
+```javascript
+function onTextBefore(user, text) {
+    var wrong = Spelling.check(stripColors(text));
+    if (wrong) {
+        var suggestions = Spelling.suggest(wrong);
+        var list = [];
+        suggestions.forEach(function(s) { list.push(s); });
+        print(user, "Did you mean: " + list.slice(0, 3).join(", ") + "?");
+    }
+    return text;
+}
+```
+
+---
+
+## `Timer` (constructor)
+
+For precise delayed or repeating callbacks, you can instantiate `Timer` objects. Backed by `JSTimerInstance.cs`.
+
+```javascript
+var t = new Timer();
+t.interval = 5000;        // milliseconds; minimum 500
+t.oncomplete = function() {
+    print("5 seconds have passed!");
+};
+t.start();
+```
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `t.interval` | `number` | Milliseconds until the callback fires. Minimum `500`. |
+| `t.oncomplete` | `function` | The function to call when the timer fires. |
+
+### Methods
+
+| Method | Returns | Description |
+|---|---|---|
+| `t.start()` | `boolean` | Schedule the timer. Returns `true` if successfully added to the queue. |
+| `t.stop()` | `boolean` | Cancel a pending timer. Returns `true` if it was in the queue. |
+
+<Note>
+Timers fire once and then are removed from the queue. To create a repeating timer, call `t.start()` again inside the `oncomplete` callback.
+</Note>
+
+---
+
+## `JSUser` — user object reference
+
+`JSUser` objects are passed to most event callbacks and returned by the `user()` global function. The full list of properties and methods on a user object:
+
+### Properties
+
+| Property | Type | Access | Description |
+|---|---|---|---|
+| `user.name` | `string` | read/write | Display name. Setting this renames the user server-side. |
+| `user.orgName` | `string` | read-only | Original (registered) name. |
+| `user.customName` | `string \| null` | read/write | Custom display name override. Set to `null` to clear. |
+| `user.id` | `number` | read-only | Session ID. `-1` for linked users. |
+| `user.guid` | `string` | read-only | Client GUID string. |
+| `user.level` | `number` | read/write | Admin level: `0`=none, `1`=mod, `2`=admin, `3`=host. Setting requires `ScriptCanLevel` to be enabled in the server config and cannot promote to owner. |
+| `user.owner` | `boolean` | read-only | `true` if this is the room owner. |
+| `user.registered` | `boolean` | read-only | `true` if the user's name is registered. |
+| `user.externalIp` | `string` | read-only | External IP address. |
+| `user.localIp` | `string` | read-only | Local (LAN) IP address. |
+| `user.localEP` | `string` | read-only | Local endpoint as `"ip:port"`. |
+| `user.dns` | `string` | read-only | Reverse DNS hostname. |
+| `user.port` | `number` | read-only | Data port. |
+| `user.country` | `string` | read-only | Country name derived from the country code. |
+| `user.region` | `string` | read-only | Region string. |
+| `user.age` | `number` | read-only | User's reported age. |
+| `user.gender` | `string` | read-only | `"Male"`, `"Female"`, or `"Unknown"`. |
+| `user.version` | `string` | read-only | Client version string. |
+| `user.vroom` | `number` | read/write | Current virtual room (0–65535). |
+| `user.idle` | `boolean` | read-only | Whether the user is currently idle. |
+| `user.muzzled` | `boolean` | read/write | Whether the user is muzzled (cannot send public messages). |
+| `user.cloaked` | `boolean` | read/write | Whether the user is cloaked (hidden from the user list). |
+| `user.visible` | `boolean` | read-only | `true` if the user is visible in the room list. |
+| `user.browsable` | `boolean` | read-only | Whether the user's file list is publicly browsable. |
+| `user.fileCount` | `number` | read-only | Number of shared files. |
+| `user.fastPing` | `boolean` | read-only | Whether the user is in fast-ping mode. |
+| `user.captcha` | `boolean` | read-only | Whether the user has passed a captcha check. |
+| `user.webClient` | `boolean` | read-only | `true` if the user connected via the web client. |
+| `user.customClient` | `boolean` | read-only | `true` if the user is using a custom sb0t client. |
+| `user.ghost` | `boolean` | read-only | `true` if the user is ghosting. |
+| `user.canHTML` | `boolean` | read-only | `true` if the user's client supports HTML messages. |
+| `user.joinTime` | `number` | read-only | Timestamp when the user joined. |
+| `user.linked` | `boolean` | read-only | `true` if the user is from a linked leaf server. |
+| `user.leaf` | `JSLeaf \| null` | read-only | The leaf server this user belongs to, or `null` if local. |
+| `user.personalMessage` | `string` | read/write | The user's personal status message. |
+| `user.avatar` | `JSAvatarImage` | read/write | The user's current avatar image. |
+| `user.font` | `JSUserFont` | read-only | Font settings (`enabled`, `nameColor`, `textColor`, `family`). |
+| `user.ignores` | `JSIgnoreCollection` | read-only | The user's current ignore list. |
+
+### Methods
+
+| Method | Description |
+|---|---|
+| `user.ban()` | Ban this user. Has no effect on the room owner. |
+| `user.disconnect()` | Disconnect this user. Has no effect on the room owner. |
+| `user.redirect(hashlink)` | Redirect the user to another room by hashlink string. |
+| `user.nudge([senderName])` | Send a nudge to the user (custom clients only). Defaults to `Room.botName`. |
+| `user.sendText(text)` | Send a public chat line directly to this user as the room bot. |
+| `user.sendEmote(text)` | Send an emote line directly to this user. |
+| `user.sendHTML(text)` | Send an HTML-formatted message to this user (if `user.canHTML`). |
+| `user.setTopic([topic])` | Send the room topic to this user. Pass no argument to send the current `Room.topic`. |
+| `user.setUrl(addr, text)` | Send the room URL to this user. |
+| `user.restoreAvatar()` | Restore the user's avatar to their original. |
+| `user.getASN()` | Return the user's ASN (Autonomous System Number) as a number. |
+
+---
+
+## Full example script
+
+The following script demonstrates several static objects working together:
+
+```javascript
+// multifeature/multifeature.js
+includeAll();
+
+var joinLog = "joins.txt";
+
+function onLoad() {
+    print("multifeature loaded. Room: " + Room.name + " v" + Room.version);
+
+    if (!File.exists(joinLog)) {
+        File.save(joinLog, "");
+    }
+}
+
+function onJoin(user) {
+    var line = new Date().toISOString() + " JOIN " + user.name +
+               " [" + user.externalIp + "]\n";
+    File.append(joinLog, line);
+    sendPM(user, Room.botName, "Welcome! Users online: " + Stats.userCount);
+}
+
+function onCommand(user, cmd, target, args) {
+    if (cmd === "hash") {
+        var h = Crypto.md5hash(args);
+        print(user, "MD5(" + args + ") = " + h.toHex());
+        return;
+    }
+
+    if (cmd === "b64") {
+        print(user, Base64.encode(args));
+        return;
+    }
+
+    if (cmd === "find") {
+        var results = Channels.search(args);
+        results.forEach(function(ch) {
+            print(user, ch.name + " (" + ch.users + ")");
+        });
+        return;
+    }
+
+    if (cmd === "stats") {
+        print(user, "Users: " + Stats.userCount +
+                    " | Peak: " + Stats.peakUserCount +
+                    " | Msgs: " + Stats.messageCount);
+        return;
+    }
+
+    if (cmd === "remember" && user.level >= 1) {
+        Registry.setValue("note_" + user.name, args);
+        print(user, "Remembered: " + args);
+        return;
+    }
+
+    if (cmd === "recall") {
+        var note = Registry.getValue("note_" + user.name);
+        print(user, note ? ("Your note: " + note) : "No note stored.");
+        return;
+    }
+}
+
+function onTimer() {
+    // Announce user count every 5 minutes
+    var k = "lastAnnounce";
+    var last = parseInt(Registry.getValue(k) || "0", 10);
+    var now = tickCount();
+    if (now - last >= 300000) {
+        Registry.setValue(k, now);
+        print("Currently " + Stats.userCount + " user(s) in " + Room.name + ".");
+    }
+}
+```

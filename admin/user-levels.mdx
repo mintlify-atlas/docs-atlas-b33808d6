@@ -1,0 +1,181 @@
+---
+title: "User Levels and Admin Accounts in sb0t"
+sidebarTitle: "User Levels"
+description: "Understand sb0t's four user levels (Regular, Moderator, Administrator, Host) and how to set passwords for elevated access."
+---
+
+Every user who connects to an sb0t room is assigned a level that controls what actions they can perform. Levels range from a plain chat participant all the way up to the room owner. Understanding this hierarchy is essential before configuring accounts, permissions, or scripts.
+
+## The ILevel Enum
+
+sb0t exposes user levels through the `ILevel` enum (defined in `iconnect/ILevel.cs`):
+
+```csharp
+public enum ILevel : byte
+{
+    Regular       = 0,
+    Moderator     = 1,
+    Administrator = 2,
+    Host          = 3
+}
+```
+
+Each connected user exposes their current level via `IUser.Level`. Scripts read this property to gate privileged actions. The numeric value increases with privilege, so guard checks typically use `>=`:
+
+```csharp
+if (client.Level >= ILevel.Administrator)
+    // allow admin action
+```
+
+## Level Descriptions
+
+<CardGroup cols={2}>
+  <Card title="Regular (0)" icon="user">
+    Default level for every new connection. Can send public messages, use private messages, share files, and interact with the standard Ares client UI. Cannot run any moderation commands.
+  </Card>
+  <Card title="Moderator (1)" icon="shield-halved">
+    Trusted users with limited moderation access. Can use commands configured at the Moderator threshold — typically muting, moving, or warning users. Flood notices sent with `Server.Print(ILevel.Moderator, ...)` are only visible to Moderators and above.
+  </Card>
+  <Card title="Administrator (2)" icon="shield">
+    Full moderation capability: banning, muzzling, redirecting, managing the word filter, and viewing internal notices. Most day-to-day admin tasks require at least this level.
+  </Card>
+  <Card title="Host (3)" icon="crown">
+    The highest assignable level. Has all Administrator capabilities plus the ability to promote or demote other users (including granting Administrator). A user with `IUser.Owner == true` is always Host and is the single room owner account.
+  </Card>
+</CardGroup>
+
+## Capability Comparison
+
+| Capability | Regular | Moderator | Administrator | Host |
+|---|:---:|:---:|:---:|:---:|
+| Send public chat | ✅ | ✅ | ✅ | ✅ |
+| See moderator notices | ❌ | ✅ | ✅ | ✅ |
+| Muzzle / unmuzzle users | ❌ | ✅† | ✅ | ✅ |
+| Kick / ban users | ❌ | ✅† | ✅ | ✅ |
+| Manage word filter | ❌ | ❌ | ✅ | ✅ |
+| Promote users | ❌ | ❌ | ✅ | ✅ |
+| Load / unload scripts | ❌ | ✅‡ | ✅‡ | ✅‡ |
+| Room owner commands | ❌ | ❌ | ❌ | ✅ (owner) |
+
+_† Depends on per-command `CommandLevel` assignment._  
+_‡ Controlled separately by the `ScriptLevel` setting — see below._
+
+## The Room Owner Account
+
+The `owner` setting holds a plaintext password for the single room owner account. When a user logs in with this password, sb0t sets `IUser.Owner = true` and `IUser.Level = ILevel.Host`. The owner flag cannot be granted to any other account:
+
+```csharp
+// From AccountManager.SecureLogin / Login
+client.Owner = true;
+client.Level = ILevel.Host;
+ServerCore.Log(client.Name + " logged in with the room owner account");
+```
+
+The owner password is stored in the sb0t settings (registry key `owner`). Change it through the server's GUI settings panel.
+
+## Password Accounts (AccountManager)
+
+Non-owner elevated accounts are stored in a SQLite database at:
+
+```
+%APPDATA%\sb0t\<room-name>\Dat\accounts.dat
+```
+
+The `accounts` table schema:
+
+```sql
+CREATE TABLE accounts (
+    name     TEXT NOT NULL,
+    level    INT  NOT NULL,
+    guid     TEXT NOT NULL,
+    password BLOB NOT NULL
+);
+```
+
+Each row binds a display name, an `ILevel` value (0–3), the user's Ares GUID, and a SHA-1 hash of their password. Passwords are **never** stored in plaintext.
+
+### Registering an Account
+
+A user registers by sending the `/register <password>` command. The password must contain at least one letter and one digit:
+
+```csharp
+// AccountManager.Register — validation excerpt
+int number_count = password.Count(Char.IsDigit);
+int letter_count = password.Count(Char.IsLetter);
+
+if (number_count == 0 || letter_count == 0)
+{
+    Events.InvalidRegistration(client);
+    return;
+}
+```
+
+Newly registered accounts receive `ILevel.Regular`. An Administrator or Host must then promote the account through the GUI or a script.
+
+### Promoting an Account
+
+After a user has registered and is online, an Administrator calls `AccountManager.UpdateAccount(admin, client)`. This writes the user's current `client.Level` back to the database so the elevated level persists across reconnections.
+
+### Strict Mode
+
+When the `strict` setting is `true`, login lookups are limited to accounts whose stored GUID matches the connecting client's GUID. This prevents one user from authenticating with another user's password from a different machine.
+
+## Auto-Login (autologins.xml)
+
+The auto-login system grants a fixed level to a user on join without requiring a password. Entries are stored in `autologins.xml` in the server's data path and are matched by **both** GUID and the first two octets of the external IP address:
+
+```xml
+<?xml version="1.0"?>
+<autologins>
+  <item>
+    <guid>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</guid>
+    <name>Alice</name>
+    <level>2</level>
+    <ip>203.0.113.45</ip>
+  </item>
+</autologins>
+```
+
+<ParamField body="level" type="byte" required>
+  Numeric `ILevel` value: `0` = Regular, `1` = Moderator, `2` = Administrator, `3` = Host.
+</ParamField>
+
+<ParamField body="guid" type="string" required>
+  The 128-bit Ares client GUID in standard hyphenated format.
+</ParamField>
+
+<ParamField body="ip" type="string" required>
+  The user's last known external IP address. The first two octets are used for range-aware matching so users on the same /16 subnet still auto-level even after a minor IP change.
+</ParamField>
+
+When an existing auto-login entry is found, `AutoLogin.GetLevel()` returns the stored level and the server applies it automatically on join — no password prompt required.
+
+## Script Level (`ScriptLevel`)
+
+`ScriptLevel` is a byte setting (0–4) that restricts who may load or unload server-side JavaScript scripts:
+
+```csharp
+// commands/Server.cs — CanScript()
+switch (Scripting.ScriptLevel)
+{
+    case 4: return user.Owner;
+    case 3: return user.Level >= ILevel.Host;
+    case 2: return user.Level >= ILevel.Administrator;
+    case 1: return user.Level >= ILevel.Moderator;
+    default: return false;  // 0 = nobody
+}
+```
+
+| ScriptLevel value | Who can manage scripts |
+|---|---|
+| `0` | Nobody (scripts locked) |
+| `1` | Moderator and above |
+| `2` | Administrator and above |
+| `3` | Host and above |
+| `4` | Room owner only |
+
+Configure `ScriptLevel` in the GUI's **Settings → Scripting** panel.
+
+<Note>
+  When `Settings.DisableAdmins` is `true` (toggled at runtime, not persisted to disk), all admin-level commands are suspended for the current session. Users retain their assigned `ILevel` but command handlers return early without executing. This flag is intended as an emergency lockdown and is reset when the server restarts.
+</Note>

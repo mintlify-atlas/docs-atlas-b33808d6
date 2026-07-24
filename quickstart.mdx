@@ -1,47 +1,104 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with sb0t Ares Chat Server"
+sidebarTitle: "Quickstart"
+description: "Download, install, and launch your sb0t Ares chat room server. Covers first-run configuration, starting the server, and connecting with an Ares client."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+Getting a room online with sb0t takes only a few minutes. The application is a standalone Windows executable — there is no installer, no database to configure, and no web server to set up. The steps below walk you through downloading the binary, filling in the basic room details in the GUI, starting the server, and making your first client connection.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+  <Step title="Download sb0t">
+    Visit the official GitHub releases page and download the latest `.zip` archive:
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+    [https://github.com/AresChat/sb0t/releases](https://github.com/AresChat/sb0t/releases)
 
-    ```bash
-    your-cli start
-    ```
+    Extract the archive to any folder you like. sb0t ships as a single `.exe` together with its required `.dll` dependencies. No installation step is needed — you can run it directly from the extracted folder.
   </Step>
+
+  <Step title="Launch the application">
+    Double-click `sb0t.exe`. The WPF main window opens. On first run, sb0t calls `DoOnce.Run()`, which:
+
+    - Creates the registry key `HKCU\Software\sb0t\sb0t.exe` if it does not already exist.
+    - Writes default values for every setting that has not been set yet (for example, port `54321` and room name `my chatroom`).
+    - Creates the data directory `%AppData%\sb0t\<app-name>\` and writes the default web chat template to `%AppData%\sb0t\<app-name>\Style\template.htm`.
+
+    The title bar shows the running version number (e.g., **sb0t 5.41**).
+  </Step>
+
+  <Step title="Configure the basics">
+    Fill in the following fields on the **General** tab before starting the server. All changes are written to the registry immediately as you type.
+
+    | Field | Registry key | Default |
+    |---|---|---|
+    | Room name | `name` | `my chatroom` |
+    | Port | `port` | `54321` |
+    | Bot name | `bot` | `sb0t` |
+    | UDP address | `udp_address` | `0.0.0.0` (any) |
+    | External IP | `ip` | Loopback (set via GUI) |
+    | Language | `language` | `10` (English) |
+
+    Set your **external (public) IP address** so that Ares clients on the internet can find you. If you do not know it, visit a site such as [https://ifconfig.me](https://ifconfig.me) and paste the result into the IP field.
+
+    Choose a **language code** from the drop-down to advertise your room to users of the same locale in the Ares room list.
+
+    <Tip>
+      If you are hosting from a home connection, you must **forward the chosen port** (default `54321`) on your router for both TCP and UDP. Without port forwarding, users outside your local network will not be able to connect. Check your router's manual or a guide for your specific model.
+    </Tip>
+  </Step>
+
+  <Step title="Click Start server">
+    Click the **Start server** button. sb0t executes `ServerCore.Open()`, which:
+
+    1. Calls `Settings.Reset()` to reload all registry values and ensure the data directory exists.
+    2. Binds a `TcpListenerEx` to `0.0.0.0:<port>` and calls `Start()`.
+    3. Binds a `UdpListener` to the address stored in `udp_address` on the same port and calls `Start()`.
+    4. Logs **"Server initialized on port \<port\>"** to the GUI log and to `%AppData%\sb0t\<app-name>\serverlog.txt`.
+    5. Starts the server background thread, which loads bans, initialises the captcha manager, starts flood control, and fires `Events.ServerStarted()`.
+
+    If either listener fails to bind (for example, the port is already in use), an error dialog appears and the server does not start. Correct the port number and try again.
+  </Step>
+
+  <Step title="Connect with an Ares client">
+    Open your Ares Galaxy client and navigate to **Rooms → Join Room** (or use a direct hashlink). Enter:
+
+    - **IP address** — your external IP address
+    - **Port** — the port you configured (default `54321`)
+    - **Room name** — the name you entered in the GUI
+
+    Alternatively, while the server is running you can click the **Ares join** button in the GUI, which constructs a hashlink (`arlnk://…`) and launches your local Ares client automatically. There is also a **cb0t join** button for the cb0t client (`cb0t://…`).
+
+    Once connected you should see yourself in the user list and be able to chat.
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## First-Run Details
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+On the very first launch (or whenever `do_once` is `0` in the registry), `DoOnce.Run()` seeds the data directory structure and writes a fresh `template.htm` for the ib0t web chat interface. If the template already exists and has become corrupted, it is backed up as `template.broken` before being replaced.
+
+The **owner password** field is auto-generated as a random 20-character lowercase string on first run and stored in the `owner` registry key. Record this value — it is the password used to claim Host-level access in the room via the Ares client.
+
+## Data File Locations
+
+All runtime data files are stored under:
+
+```
+%AppData%\sb0t\<app-name>\
+```
+
+| Subfolder / file | Purpose |
+|---|---|
+| `serverlog.txt` | Timestamped server event log |
+| `Style\template.htm` | ib0t web chat HTML template |
+| `Avatars\server` | Server avatar image (JPEG, 90×90) |
+| `Avatars\default` | Default user avatar image (JPEG, 90×90) |
+| `Extensions\<name>\extension.dll` | Installed extension DLLs |
+| `TEMPLATE IMPORTER\` | Drop old sb0t 4.x `template.txt` here for auto-migration |
+| `FILTER IMPORTER\` | Drop old sb0t 4.x filter XML files here for auto-migration |
+
+You can open this folder at any time by clicking the **Open data folder** button in the GUI.
+
+<Warning>
+  sb0t uses `AppDomain.CurrentDomain.FriendlyName` (the executable's filename) as the registry key and data folder name. If you run two copies of `sb0t.exe` at the same time, the second instance will detect the mutex collision and exit with an error. To host **multiple simultaneous rooms**, rename each copy of the executable to a unique name (e.g., `room1.exe`, `room2.exe`) before launching.
+</Warning>

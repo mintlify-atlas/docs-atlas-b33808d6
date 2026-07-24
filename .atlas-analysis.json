@@ -1,0 +1,110 @@
+{
+  "projectType": "saas",
+  "projectName": "sb0t",
+  "projectDescription": "sb0t is a Windows-based Ares chat room server with a WPF GUI, JavaScript scripting engine, web client support, multi-server linking, and a full suite of moderation tools.",
+  "theme": "aspen",
+  "primaryColor": "#2563EB",
+  "lightColor": "#3B82F6",
+  "darkColor": "#1D4ED8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "admin/user-levels",
+              "admin/bans-and-moderation",
+              "admin/word-filter",
+              "admin/anti-flood"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/web-chat",
+              "features/server-linking",
+              "features/captcha",
+              "features/avatars-and-profiles"
+            ]
+          },
+          {
+            "group": "Scripting",
+            "pages": [
+              "scripting/overview",
+              "scripting/events",
+              "scripting/global-functions",
+              "scripting/objects"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Scripting API",
+        "groups": [
+          {
+            "group": "Core Objects",
+            "pages": [
+              "api/room",
+              "api/user",
+              "api/users",
+              "api/link"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/crypto",
+              "api/channels",
+              "api/timer",
+              "api/http-request"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Ares protocol TCP/UDP chat server with WPF GUI",
+    "JavaScript scripting engine powered by Jurassic for runtime automation",
+    "Web client (ib0t) support via WebSocket-based HTML5 interface",
+    "Multi-server linking (Hub/Leaf topology) for federated chat rooms",
+    "Comprehensive ban system: IP bans, range bans, ASN bans, GUID bans",
+    "Word filter with regex support and multiple enforcement actions",
+    "Anti-flood and connection flood protection",
+    "Captcha challenge system for joining users",
+    "Admin levels: Regular, Moderator, Administrator, Host",
+    "User account registration with password authentication",
+    "Virtual rooms (vrooms), user avatars, scribbles, and custom fonts",
+    "Chat history, greet messages, MOTD, and URL tags",
+    "Proxy detection and automatic ban expiry"
+  ],
+  "publicApiSurface": [
+    "ServerCore.Open() / ServerCore.Close()",
+    "ServerCore.LogUpdate event",
+    "IUser interface (user properties and actions)",
+    "IRoom interface (chatroom properties)",
+    "IPool interface (user pool actions)",
+    "IHostApp interface (extension host callback)",
+    "ILevel enum (Regular, Moderator, Administrator, Host)",
+    "IExtension interface (scripting / command extension hook)",
+    "scripting JS events: onJoin, onPart, onTextBefore, onTextAfter, onCommand, onTimer, onBotPM, onPMBefore, onLinked, onLeafJoin",
+    "JS global functions: user(), print(), sendPM(), sendText(), sendEmote(), include(), stripColors(), tickCount()",
+    "JS Room object: name, topic, botName, hashlink, externalIp, port, setUrl(), clearUrl()",
+    "JS Users object: local(), linked(), banned(), records()",
+    "JS Link object: connect(), disconnect(), leaves(), leaf(), linked, name, hashlink",
+    "JS Crypto object: md5hash(), sha1hash()",
+    "Settings.Get<T>() / Settings.Set()",
+    "BanSystem.AddBan(), BanSystem.IsBanned()",
+    "ScriptManager.Load(), ScriptManager.KillScript()"
+  ]
+}

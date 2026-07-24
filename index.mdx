@@ -1,20 +1,58 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "sb0t: Ares Chat Room Server"
+sidebarTitle: "Home"
+description: "sb0t is a self-hosted Ares chat room server for Windows with a WPF GUI, JavaScript scripting engine, web client support, and full moderation tools."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+sb0t is a feature-complete Ares protocol chat room server for Windows. It lets you host your own chatroom that any Ares client can connect to, with a rich administration panel, a JavaScript scripting engine for automation, an optional HTML5 web chat interface, and multi-server linking for federated rooms.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what sb0t is, how it works, and what you can do with it.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get your server running and accepting connections in minutes.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure your server name, port, language, bot name, and more.
+  </Card>
+  <Card title="Scripting" icon="code" href="/scripting/overview">
+    Automate your room with the built-in JavaScript scripting engine.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What sb0t Does
+
+sb0t hosts an Ares-compatible chat room on your Windows machine. Users connect with any Ares client (or a browser via the optional web chat), and you administer the room through a desktop GUI. You can ban users, filter words, set admin levels, run automated JavaScript scripts, and link your server to other sb0t instances for a shared user pool.
+
+<CardGroup cols={2}>
+  <Card title="Moderation Tools" icon="shield-halved" href="/admin/bans-and-moderation">
+    IP bans, range bans, ASN bans, word filtering, anti-flood, and muzzles.
+  </Card>
+  <Card title="Web Chat" icon="globe" href="/features/web-chat">
+    Let browser users join your room via the built-in HTML5 WebSocket interface.
+  </Card>
+  <Card title="Server Linking" icon="link" href="/features/server-linking">
+    Connect multiple sb0t servers in a Hub/Leaf topology to share a user pool.
+  </Card>
+  <Card title="Scripting API" icon="terminal" href="/api/room">
+    Full JavaScript API reference for Room, User, Users, Link, Crypto, and more.
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+<Steps>
+  <Step title="Download and install sb0t">
+    Grab the latest release from [GitHub Releases](https://github.com/AresChat/sb0t/releases) and run the installer on your Windows machine.
+  </Step>
+  <Step title="Configure your room">
+    Open the sb0t GUI and fill in your room name, port, external IP, bot name, and language settings.
+  </Step>
+  <Step title="Start the server">
+    Click **Start** in the GUI. Your room will appear in the Ares channel list and start accepting connections.
+  </Step>
+  <Step title="Add moderation and scripts">
+    Set admin passwords, configure bans and word filters, and load JavaScript scripts to automate your room.
+  </Step>
+</Steps>

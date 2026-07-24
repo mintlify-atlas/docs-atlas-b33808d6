@@ -1,0 +1,224 @@
+---
+title: "Link Object — Hub/Leaf Control in sb0t Scripts"
+sidebarTitle: "Link"
+description: "API reference for the Link static object in sb0t scripts. Connect and disconnect from a hub, enumerate leaves, and inspect the link state."
+---
+
+`Link` is a static singleton that exposes the Hub/Leaf linking subsystem to scripts. When sb0t is configured in **hub mode**, remote servers connect to it as leaves and their users appear in the shared room. When configured in **leaf mode**, this server connects to a hub and mirrors its user population. `Link` lets scripts inspect the current connection state, initiate or terminate connections, and iterate the leaf list (hub mode only). All properties return safe defaults — `null`, `-1`, or `false` — when the server is not currently linked.
+
+<Warning>
+  Calling `Link.connect()` while `Link.linked` is already `true` will be silently ignored. Always call `Link.disconnect()` and confirm the state has changed before attempting a new connection.
+</Warning>
+
+---
+
+## Properties
+
+<ParamField path="Link.linked" type="bool">
+  `true` if this server is currently connected to a hub (leaf mode). `false` when running standalone or acting as a hub. **Read-only.**
+</ParamField>
+
+<ParamField path="Link.name" type="string | null">
+  The display name of the hub this server is connected to. Returns `null` when not linked. **Read-only.**
+</ParamField>
+
+<ParamField path="Link.externalIp" type="string | null">
+  The external IP address of the hub, as a dotted-decimal string. Returns `null` when not linked. **Read-only.**
+</ParamField>
+
+<ParamField path="Link.port" type="int">
+  The port on which the hub is listening. Returns `-1` when not linked. **Read-only.**
+</ParamField>
+
+<ParamField path="Link.hashlink" type="string | null">
+  A fully-formed `arlnk://` deep-link that resolves to the hub room. Returns `null` when not linked. **Read-only.**
+</ParamField>
+
+---
+
+## Methods
+
+<ParamField path="Link.connect(address)" type="function">
+  Instructs the server to connect to a hub identified by `address`. The address may be an IP:port string or an `arlnk://` hashlink.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `address` | string | The hub address or `arlnk://` hashlink to connect to. |
+</ParamField>
+
+<ParamField path="Link.disconnect()" type="function">
+  Disconnects from the currently connected hub. All leaf-user ghost entries are removed from the local user list. Has no effect when not linked.
+</ParamField>
+
+<ParamField path="Link.leaves(fn)" type="function">
+  Iterates over all leaf servers currently connected to this hub and calls `fn(leaf)` for each one. Only produces results when this server is operating in hub mode and has active leaf connections. The `leaf` argument is a [`Leaf`](#leaf-object) object.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `Leaf` object for each connected leaf. |
+</ParamField>
+
+<ParamField path="Link.leaf(name)" type="function">
+  Looks up a single leaf by name and returns its `Leaf` object, or `null` if no matching leaf is found. The lookup first tries an exact match, then falls back to a prefix match.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `name` | string | The leaf server name (or name prefix) to search for. |
+
+  **Returns:** `Leaf` object, or `null`.
+</ParamField>
+
+---
+
+## Leaf Object
+
+Each `Leaf` object represents one connected leaf server and provides messaging and user-iteration capabilities.
+
+### Leaf Properties
+
+<ParamField path="leaf.name" type="string">
+  The display name of the leaf server. **Read-only.**
+</ParamField>
+
+<ParamField path="leaf.externalIp" type="string">
+  The external IP address of the leaf server. **Read-only.**
+</ParamField>
+
+<ParamField path="leaf.port" type="int">
+  The port the leaf server is listening on. **Read-only.**
+</ParamField>
+
+<ParamField path="leaf.hashlink" type="string">
+  A fully-formed `arlnk://` deep-link that resolves to this leaf's room. **Read-only.**
+</ParamField>
+
+### Leaf Methods
+
+<ParamField path="leaf.users(fn)" type="function">
+  Iterates over every user connected to this leaf and calls `fn(user)` for each one. The `user` argument is a full [`User`](/api/user) object.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `fn` | function | Callback invoked with a `User` object for each user on the leaf. |
+</ParamField>
+
+<ParamField path="leaf.user(name)" type="function">
+  Finds a single user on this leaf by name. Tries an exact match first, then a prefix match. Returns the `User` object or `null`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `name` | string | The username (or name prefix) to search for. |
+</ParamField>
+
+<ParamField path="leaf.print(text)" type="function">
+  Sends a system message to all users on this leaf. Pass an optional first argument as a virtual room number to restrict delivery to users in that vroom.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `text` | string | The system message to send. |
+</ParamField>
+
+<ParamField path="leaf.printAdmins(level, text)" type="function">
+  Sends a system message only to users on this leaf whose admin level is at or above `level`. If only one argument is provided, defaults to Moderator level (1) and above.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `level` | int | Minimum admin level: `1`=Mod, `2`=Admin, `3`=Host. |
+  | `text` | string | The message to deliver. |
+</ParamField>
+
+<ParamField path="leaf.sendText(sender, text)" type="function">
+  Broadcasts a public chat line to all users on this leaf, attributed to `sender`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `sender` | string | Name to attribute the message to. |
+  | `text` | string | Message content. |
+</ParamField>
+
+<ParamField path="leaf.sendEmote(sender, text)" type="function">
+  Broadcasts an emote action line to all users on this leaf, attributed to `sender`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `sender` | string | Name to attribute the emote to. |
+  | `text` | string | Emote content. |
+</ParamField>
+
+<ParamField path="leaf.scribble(sender, img)" type="function">
+  Sends a scribble drawing to all users on this leaf. The first argument can be either a `JSScribbleImage` (sender defaults to `Room.botName`) or a sender name string followed by a `JSScribbleImage`.
+
+  | Parameter | Type | Description |
+  |-----------|------|-------------|
+  | `sender` | string \| JSScribbleImage | Sender name, or the scribble image itself. |
+  | `img` | JSScribbleImage | Scribble image (only required when `sender` is a string). |
+</ParamField>
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```javascript Check link state in a timer
+function onTimer() {
+  if (Link.linked) {
+    print("Connected to hub: " + Link.name + " (" + Link.externalIp + ":" + Link.port + ")");
+  } else {
+    print("Not currently linked to any hub.");
+  }
+}
+```
+
+```javascript Count total users across all leaves
+function onChat(user, text) {
+  if (text === "!totalcount" && user.level >= 1) {
+    var total = 0;
+
+    // Count local users
+    Users.local(function(u) { total++; });
+
+    // Add users from each leaf
+    Link.leaves(function(leaf) {
+      leaf.users(function(u) { total++; });
+    });
+
+    print(user, "Total users (local + linked): " + total);
+  }
+}
+```
+
+```javascript Announce a message to a specific leaf
+function onChat(user, text) {
+  if (text.startsWith("!leafmsg ") && user.level >= 2) {
+    var parts = text.slice(9).split(" ");
+    var leafName = parts.shift();
+    var message = parts.join(" ");
+
+    var target = Link.leaf(leafName);
+    if (target) {
+      target.print(message);
+      print(user, "Message sent to leaf: " + target.name);
+    } else {
+      print(user, "Leaf not found: " + leafName);
+    }
+  }
+}
+```
+
+```javascript Reconnect to a hub from a script
+function onChat(user, text) {
+  if (text.startsWith("!connect ") && user.level >= 3) {
+    var address = text.slice(9).trim();
+
+    if (Link.linked) {
+      Link.disconnect();
+    }
+
+    Link.connect(address);
+    print(user, "Connecting to: " + address);
+  }
+}
+```
+
+</CodeGroup>

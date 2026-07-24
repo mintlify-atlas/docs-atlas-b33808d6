@@ -1,0 +1,115 @@
+---
+title: "JavaScript Scripting Engine in sb0t"
+sidebarTitle: "Overview"
+description: "Use sb0t's built-in JavaScript scripting engine (powered by Jurassic) to automate your room, respond to events, and extend server behavior."
+---
+
+sb0t includes a full JavaScript scripting engine based on the [Jurassic](https://github.com/paulbartrum/jurassic) .NET runtime. Every script runs inside its own isolated `ScriptEngine` context and has access to a rich set of server APIs — user management, room control, file I/O, cryptography, linking, and more — without requiring any plugins or external runtimes.
+
+## How scripts are loaded
+
+When the server starts, `ScriptManager.AutoRun()` always creates the special **`room`** script context first, then reads `autorun.dat` from the scripting data directory and loads any additional scripts listed there. Scripts that are loaded or unloaded while the server is running are automatically reflected in `autorun.dat` so they persist across restarts.
+
+Each script lives in its own folder inside the scripting data directory:
+
+```
+%AppData%\sb0t\<app-name>\Scripting\
+    room\
+        room.js          ← always-loaded default context
+    greeter\
+        greeter.js       ← entry-point file (same name as the folder)
+        helpers.js       ← additional files included manually
+        data\            ← writable data folder (used by the File object)
+```
+
+The entry-point file must share the same name as the folder (e.g. `greeter/greeter.js`). When a script is loaded, `onLoad()` is called automatically if you define it.
+
+## In-room management commands
+
+Users whose admin level meets the configured `ScriptLevel` threshold can manage scripts directly from the chat window:
+
+| Command | Description |
+|---|---|
+| `/loadscript <name>` | Load and start a script by folder name. If the script is already loaded it is reloaded. |
+| `/killscript <name>` | Stop and unload a running script. |
+| `/listscripts` | Print the names of all currently running scripts (excluding `room`). |
+| `/downloadscript <name>` | Download a script from the sb0t live-script directory and load it immediately. |
+| `/livescripts` | List the scripts available for download from the live-script directory. |
+| `/errors on` | Start receiving JavaScript error messages as private messages from the bot. |
+| `/errors off` | Stop receiving JavaScript error messages. |
+
+<Note>
+The `room` script is protected and can never be killed or reloaded via `/killscript`.
+</Note>
+
+## ScriptLevel — who can manage scripts
+
+The `ScriptLevel` setting (configured in the server settings) controls the minimum admin level required to use the management commands above:
+
+| Value | Who can manage scripts |
+|---|---|
+| `0` | Nobody (scripting management disabled) |
+| `1` | Moderators and above |
+| `2` | Administrators and above |
+| `3` | Hosts and above |
+| `4` | Room owner only |
+
+## ScriptInRoom — interactive evaluation
+
+When `ScriptInRoom` is enabled in the server configuration, users who meet the `ScriptLevel` threshold can type JavaScript expressions directly in the chat room and have them evaluated against the `room` script engine.
+
+- A message **beginning with `@`** is evaluated silently (no output printed to the room).
+- Any other message is evaluated and its return value, if not `undefined`, is printed to the room for all to see.
+
+Before evaluation, the variable `userobj` is automatically set to the `user` object of the person typing the expression, so you can reference it in inline code.
+
+<Warning>
+`ScriptInRoom` gives qualifying users direct access to the script engine's global scope. Only enable it if you fully trust everyone at the required admin level. Any global variable or function defined in the `room` script can be read or overwritten.
+</Warning>
+
+## Error handling
+
+Runtime JavaScript errors are caught by sb0t and dispatched through `ErrorDispatcher`. Users who have run `/errors on` receive errors as private messages from the bot in the format:
+
+```
+<scriptName>: <error message> at line <lineNumber>
+```
+
+Errors never crash the server or unload the script; execution of the current event simply stops.
+
+## Timers
+
+`onTimer()` is called **once per second** for every loaded script. For finer-grained, non-blocking timers you can use the built-in `Timer` constructor class (see [Objects](/scripting/objects)).
+
+## Multi-file scripts and `include`
+
+A script folder can contain as many `.js` files as needed. The entry-point file is executed first; from there you can pull in other files:
+
+- `include("helpers.js")` — execute a single named file from the same folder.
+- `includeAll()` — execute every `.js` file in the folder except the entry point.
+
+Filenames passed to `include` must not contain `..`, `/`, `\`, or spaces, and must end in `.js`.
+
+## Minimal script skeleton
+
+```javascript
+// greeter/greeter.js
+
+function onLoad() {
+    print("Greeter script loaded!");
+}
+
+function onJoin(user) {
+    print(user, "Welcome to the room, " + user.name + "!");
+}
+
+function onCommand(user, cmd, target, args) {
+    if (cmd === "hello") {
+        print(user, "Hello, " + user.name + "!");
+    }
+}
+
+function onTimer() {
+    // called every second
+}
+```
