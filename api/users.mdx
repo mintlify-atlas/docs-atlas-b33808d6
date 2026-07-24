@@ -1,7 +1,7 @@
 ---
 title: "Users Object — Iterate the User Pool in sb0t Scripts"
 sidebarTitle: "Users"
-description: "API reference for the Users static object in sb0t scripts. Iterate local, linked, banned, and historical user records."
+description: "API reference for the Users static object in sb0t scripts. Iterate local users, linked users, active ban entries, and historical session records."
 ---
 
 `Users` is a static singleton that provides iterator methods over different slices of the server's user pool. Rather than returning arrays, each method accepts a **callback function** and invokes it once per matching record — the same pattern as `Array.prototype.forEach`. This design avoids creating heavyweight JavaScript arrays for large populations and keeps iteration logic in C#, where it is safe to execute under locks. The four iterators cover locally connected users, users from linked leaf servers, the active ban list, and the full join-history log for the current server session.

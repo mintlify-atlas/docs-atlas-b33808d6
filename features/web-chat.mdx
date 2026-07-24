@@ -75,7 +75,7 @@ sb.Append("&name=" + Uri.EscapeDataString(Settings.Name));
 sb.Append("&topic=" + Uri.EscapeDataString(Settings.Topic));
 ```
 
-The push URL is read from `Settings.Get<String>("url", "web")`. The initial push is fired immediately on server start (the timer is pre-subtracted by 20 minutes so the first tick fires at `time 0 + 1,200,000 ms`).
+The push URL is read from `Settings.Get<String>("url", "web")`. The initial push fires on the first server loop tick — `channel_push_timer` is pre-initialised to `Time.Now - 1200000`, so the condition `time > (channel_push_timer + 1200000)` is satisfied immediately without waiting 20 minutes.
 
 ## Extended Protocol Features
 
@@ -97,6 +97,6 @@ The HTML template and CSS served to web clients is loaded from `%AppData%\sb0t\<
 
 sb0t applies the same join-flood guard and per-IP limit to web clients as it does to Ares desktop clients:
 
-- **Maximum 3 connections per external IP** — a fourth connection attempt from the same IP is rejected with `RejectedMsg.TooManyClients`.
+- **Maximum 4 connections per external IP** — a fifth connection attempt from the same IP is rejected with `RejectedMsg.TooManyClients`.
 - **Join flood detection** — repeated joins within a short window trigger `RejectedMsg.TooSoon`.
 - **Message flood control** — once logged in, every inbound `ident` is passed through `FloodControl.IsFlooding()`; detected floods fire `Events.Flooding()` and, if not cancelled, disconnect the user.

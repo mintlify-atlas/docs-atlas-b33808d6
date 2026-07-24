@@ -1,7 +1,7 @@
 ---
-title: "Bans, Muzzles, and User Moderation in sb0t"
+title: "Bans, Muzzles, and User Moderation Tools in sb0t Server"
 sidebarTitle: "Bans & Moderation"
-description: "How to ban, muzzle, redirect, and quarantine users in sb0t. Covers IP bans, GUID bans, range bans, ASN bans, and muzzle timeouts."
+description: "How to ban, muzzle, redirect, and quarantine users in sb0t. Covers IP bans, GUID bans, range bans, ASN bans, proxy detection, and muzzle timeouts."
 ---
 
 sb0t gives administrators several overlapping tools for dealing with disruptive users: temporary bans, permanent bans, subnet/ASN bans, muzzles, quarantine, and cross-room redirects. Each mechanism stores its state in a separate file under the server's data directory so they survive restarts independently.
@@ -86,7 +86,7 @@ Calling `userobj.ban()` invokes `IUser.Ban()` directly; the owner account is pro
 
 `BanSystem.AutoClearBans()` is called every 2 seconds from the server loop. When the `auto_ban_clear_enabled` setting is `true`, it computes:
 
-```
+```text
 elapsed hours since last clear >= auto_ban_clear_interval
 ```
 

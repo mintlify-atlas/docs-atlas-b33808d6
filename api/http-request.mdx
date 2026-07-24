@@ -1,7 +1,7 @@
 ---
 title: "HttpRequest — Async HTTP Calls from sb0t Scripts"
 sidebarTitle: "HttpRequest"
-description: "Use sb0t's HttpRequest instance to make async HTTP GET and POST requests from scripts, with callback-based response handling."
+description: "API reference for sb0t's HttpRequest, XmlParser, Node, and Query scripting objects. Make async HTTP requests and parse XML responses in scripts."
 ---
 
 sb0t scripts can make outbound HTTP requests using the constructable `HttpRequest` object, enabling scripts to call external APIs, fetch data feeds, post webhook notifications, or retrieve content from the web. Requests run on a background thread and invoke a callback when the response arrives.
@@ -160,15 +160,115 @@ req.download("secure-lookup");
 
 ---
 
-## Query — XML Parser
+## XmlParser — XML Document Object
 
-`Query` is a constructable object for building parameterized SQLite queries. However, `JSNode`, `JSNodeCollection`, and `JSNodeAttributes` are the XML parsing objects that integrate with `HttpRequest` responses — they wrap the standard .NET `XmlDocument` API and let scripts navigate parsed XML trees.
+`XmlParser` is a constructable object for loading and navigating XML documents. Use it to parse the response body returned by `HttpRequest` into a traversable node tree. It wraps the .NET `XmlDocument` API and surfaces `Node`, `NodeCollection`, and `NodeAttributes` objects.
 
-To parse an XML response, load the response body into a `Query`-adjacent XML document context. The `Node` and `NodeCollection` objects are surfaced automatically when methods like `getNodesByName()` return results.
+### Creating an XmlParser
 
-### Node Object
+```javascript
+var parser = new XmlParser();
+```
 
-A `Node` represents a single XML element. Nodes are returned by XML parsing operations.
+---
+
+### XmlParser Instance Properties
+
+<ParamField body="available" type="boolean">
+  `true` if an XML document has been successfully loaded or created and is ready to traverse. `false` before `load()` or `create()` is called, or after a failed parse.
+</ParamField>
+
+<ParamField body="xml" type="string">
+  Returns the current XML document as a formatted (indented) UTF-8 string. Returns `null` if `available` is `false` or serialization fails.
+</ParamField>
+
+<ParamField body="nodeName" type="string">
+  The name of the document root node. Returns `null` if `available` is `false`.
+</ParamField>
+
+<ParamField body="nodeValue" type="string">
+  The inner text content of the entire document. Assignable. Returns `null` if `available` is `false`.
+</ParamField>
+
+<ParamField body="parentNode" type="Node">
+  The parent `Node` of the document root, or `null` if there is none.
+</ParamField>
+
+<ParamField body="childNodes" type="NodeCollection">
+  A `NodeCollection` of the document's top-level child elements. Returns `null` if there are none or if `available` is `false`.
+</ParamField>
+
+<ParamField body="attributes" type="NodeAttributes">
+  A `NodeAttributes` collection for the document root's XML attributes. Returns `null` if unavailable.
+</ParamField>
+
+---
+
+### XmlParser Instance Methods
+
+#### `parser.load(xmlString)`
+
+Parses an XML string and makes the document available for traversal.
+
+<ParamField body="xmlString" type="string" required>
+  A valid XML string to parse.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success, `false` if parsing fails.
+
+---
+
+#### `parser.create(rootTagName)`
+
+Creates a new empty XML document with a single root element and an XML declaration.
+
+<ParamField body="rootTagName" type="string" required>
+  The tag name for the root element.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+#### `parser.getNodesByName(tagName)`
+
+Searches the entire document for all elements with a given tag name.
+
+<ParamField body="tagName" type="string" required>
+  The element tag name to search for.
+</ParamField>
+
+**Returns:** `NodeCollection` — the matching nodes, or `null` if none were found.
+
+---
+
+#### `parser.appendChild(tagName)`
+
+Creates and appends a new child element directly under the document root element.
+
+<ParamField body="tagName" type="string" required>
+  The tag name for the new element.
+</ParamField>
+
+**Returns:** `Node` — the newly created child node, or `null` on error.
+
+---
+
+#### `parser.removeChild(node)`
+
+Removes a direct child `Node` from the document root element.
+
+<ParamField body="node" type="Node" required>
+  The child `Node` instance to remove.
+</ParamField>
+
+**Returns:** `boolean` — `true` on success.
+
+---
+
+## Node Object
+
+A `Node` represents a single XML element returned by traversal operations (`childNodes`, `getNodesByName()`, etc.).
 
 <ParamField body="nodeName" type="string">
   The tag name of the XML element (e.g. `"item"`, `"title"`).
@@ -228,7 +328,7 @@ Removes a child `Node` from this node.
 
 ---
 
-### NodeCollection Object
+## NodeCollection Object
 
 An array-like collection of `Node` objects returned by `childNodes` and `getNodesByName()`.
 
@@ -238,9 +338,9 @@ An array-like collection of `Node` objects returned by `childNodes` and `getNode
 
 ---
 
-### NodeAttributes Object
+## NodeAttributes Object
 
-Returned by `node.attributes`, this collection provides access to an element's XML attribute names and values.
+Returned by `node.attributes` and `parser.attributes`, this collection provides access to an element's XML attribute names and values.
 
 <ParamField body="length" type="number">
   The number of attributes on the element. Access attribute names by numeric index: `attrs[0]`, `attrs[1]`, etc.
@@ -277,26 +377,23 @@ Removes an attribute from the owning element.
 
 ---
 
-### Query Object
+## Query Object
 
-`Query` is used for parameterized SQLite queries rather than XML parsing. See the database scripting documentation for usage. The constructor accepts a SQL string with `{0}`, `{1}`, … placeholders and corresponding values:
+`Query` is a constructable object for building parameterized SQLite queries. It is passed to an `Sql` instance's `query()` method for execution. The constructor accepts a SQL string with `{0}`, `{1}`, … placeholders and corresponding values:
 
 ```javascript
 var q = new Query("SELECT * FROM users WHERE name = {0}", "Alice");
 ```
 
-Placeholder values may be strings, integers, or floating-point numbers.
+Placeholder values may be strings, integers, or floating-point numbers. See the `Sql` object documentation for full database usage.
 
 ---
 
-### Example: Fetch and Parse XML
+## Examples
 
 <CodeGroup>
 
 ```javascript Fetch RSS Feed and Parse XML
-// NOTE: XML parsing requires an XML document object available in your script context.
-// The Node/NodeCollection API is surfaced when the server's XML DOM methods return results.
-
 var req = new HttpRequest();
 req.src = "https://feeds.example.com/rss.xml";
 req.method = "GET";
@@ -306,16 +403,15 @@ req.oncomplete = function(result) {
         room.say("Failed to fetch feed.");
         return;
     }
-    // result.page contains the raw XML string — pass it to your XML document context
-    room.say("Fetched " + result.page.length + " bytes of XML.");
-};
-req.download();
-```
 
-```javascript Navigate a Node Tree
-// Assuming 'rootNode' is a Node object returned from an XML parse operation:
-function processNode(rootNode) {
-    var items = rootNode.getNodesByName("item");
+    var parser = new XmlParser();
+
+    if (!parser.load(result.page)) {
+        room.say("Failed to parse XML.");
+        return;
+    }
+
+    var items = parser.getNodesByName("item");
 
     if (!items) {
         room.say("No <item> elements found.");
@@ -323,17 +419,27 @@ function processNode(rootNode) {
     }
 
     for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        var titleNodes = item.getNodesByName("title");
-
+        var titleNodes = items[i].getNodesByName("title");
         if (titleNodes && titleNodes.length > 0) {
             room.say("Title: " + titleNodes[0].nodeValue);
         }
+    }
+};
+req.download();
+```
 
+```javascript Navigate a Node Tree
+var parser = new XmlParser();
+parser.load("<root><item id=\"1\">Hello</item><item id=\"2\">World</item></root>");
+
+var items = parser.getNodesByName("item");
+
+if (items) {
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
         var attrs = item.attributes;
-        if (attrs && attrs.length > 0) {
-            room.say("First attribute: " + attrs[0] + " = " + attrs.getValue(attrs[0]));
-        }
+        var id = attrs ? attrs.getValue("id") : "?";
+        room.say("Item " + id + ": " + item.nodeValue);
     }
 }
 ```

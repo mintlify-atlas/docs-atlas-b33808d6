@@ -1,41 +1,44 @@
 ---
-title: "Anti-Flood and Rate Limiting in sb0t"
+title: "Anti-Flood Protection and Rate Limiting in sb0t Server"
 sidebarTitle: "Anti-Flood"
-description: "How sb0t's anti-flood system detects and handles message flooding, connection flood protection, and per-user rate limiting."
+description: "How sb0t's anti-flood system detects and handles message flooding, connection flood protection, and per-user packet rate limiting."
 ---
 
 sb0t protects the chatroom from flooding at two independent layers: a **connection-level** gate that silently drops rapid reconnections from the same IP, and a **per-user message-rate** system that tracks packet frequency and repeated content for each logged-in user. Both layers are handled in the main server loop and require no manual configuration beyond enabling the `filtering` setting.
 
 ## Layer 1 — Connection Flood Protection
 
-The TCP listener in `core/ServerCore.cs` maintains a dictionary (`_connectFlood`) that maps IP address strings to a `(timestamp, count)` tuple. Every time the server accepts a new socket it increments the counter for that IP:
+`core/ServerCore.cs` maintains a dictionary (`_connectFlood`) that maps IP address strings to a `(timestamp, count)` tuple. The counter is incremented each time a socket belonging to that IP **disconnects**, not when it connects:
 
 ```csharp
+// ServiceAresSockets — called when a client's socket closes
 if (_connectFlood.ContainsKey(ipAddress))
 {
     var item = _connectFlood[ipAddress];
     _connectFlood[ipAddress] = (time, item.count + 1);
 }
 else
-{
     _connectFlood[ipAddress] = (time, 1);
-}
 ```
 
-If the same IP has already connected **3 or more times** within the active window, the socket is immediately disposed without creating a user object:
+When the server **accepts** a new incoming socket, it checks whether that IP has already triggered 3 or more recent disconnects. If so, the socket is immediately disposed without creating a user object:
 
 ```csharp
-if (_connectFlood[ipAddress].count >= 3)
+// CheckTCPListener — called on every new TCP accept
+if (_connectFlood.ContainsKey(ipAddress))
 {
-    var item = _connectFlood[ipAddress];
-    item.time = time;
-    _connectFlood[ipAddress] = item;
-    sock.Dispose();
-    return;
+    if (_connectFlood[ipAddress].count >= 3)
+    {
+        var item = _connectFlood[ipAddress];
+        item.time = time;
+        _connectFlood[ipAddress] = item;
+        sock.Dispose();
+        return;
+    }
 }
 ```
 
-Stale entries are pruned from `_connectFlood` in the 60-second reset loop (see below). The expiry window is calculated as `Time.Now + 300000` (5 minutes in milliseconds).
+This effectively blocks rapid reconnect cycling from the same IP. The `_connectFlood` dictionary is pruned in the 60-second reset loop (see below).
 
 ## Layer 2 — Per-User Message Rate Limiting
 

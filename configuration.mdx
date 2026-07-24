@@ -1,5 +1,5 @@
 ---
-title: "Configure Your sb0t Chat Room"
+title: "sb0t Configuration: All Registry Settings Explained"
 sidebarTitle: "Configuration"
 description: "All sb0t configuration options: room name, port, bot name, language, admin settings, web chat, scripting levels, and Windows Registry storage details."
 ---
@@ -29,7 +29,7 @@ These settings control the network listener and runtime behavior of the server p
 </ParamField>
 
 <ParamField path="logging" type="bool" default="false">
-  When `true`, chat events are written to `%AppData%\sb0t\<app-name>\serverlog.txt`. Written by the **Chat logging** checkbox.
+  When `true`, public chat messages are appended to daily log files under `%AppData%\sb0t\<app-name>\ChatLogs\<day> <month> <year>.txt`. Server events and errors are always written to `serverlog.txt` regardless of this setting. Written by the **Chat logging** checkbox.
 </ParamField>
 
 <ParamField path="autostart" type="bool" default="false">
@@ -182,15 +182,15 @@ These settings control whether JavaScript scripts can run and at what privilege 
   When `true`, users at or above `inroom_level` can execute script commands directly in the chat room. Only available when `scripting` is `true`. Written by the **In-room scripting** checkbox.
 </ParamField>
 
-<ParamField path="inroom_level" type="byte" default="4">
-  The minimum `ILevel` value required to run in-room script commands. Maps to the combo box indices as follows:
+<ParamField path="inroom_level" type="byte" default="0">
+  The minimum `ILevel` value required to run in-room script commands. The GUI displays combo index `b - 1`, or index `3` when the stored value is `0` (not yet set). Maps to the combo box indices as follows:
 
   | Combo index | Stored value | Level |
   |---|---|---|
   | 0 | `1` | Moderator |
   | 1 | `2` | Administrator |
   | 2 | `3` | Host |
-  | 3 | `4` | (combo default, resolves to index 3) |
+  | 3 | `4` | (shown when value is unset; selecting this index stores `4`) |
 
   Written by the **Minimum level** combo box on the scripting tab.
 </ParamField>
@@ -209,12 +209,16 @@ These settings control whether JavaScript scripts can run and at what privilege 
 
 These settings are stored under the `settings` sub-key: `HKCU\Software\sb0t\<app-name>\settings`. They are read and written by `commands.Settings` and control the behavior of the built-in bot.
 
+<Note>
+  `bot` and `owner` are stored in the **root** registry key (`HKCU\Software\sb0t\<app-name>`), not the `\settings` sub-key. They are written directly by the GUI via `core.Settings`.
+</Note>
+
 <ParamField path="bot" type="String" default="sb0t">
-  The display name the bot uses when sending automated messages (topic changes, greetings, notices). Written by the **Bot name** text box.
+  The display name the bot uses when sending automated messages (topic changes, greetings, notices). Stored in the root registry key. Written by the **Bot name** text box.
 </ParamField>
 
 <ParamField path="owner" type="String">
-  The owner password. A user types this password in the Ares client to claim `Host` level access. Auto-generated as a 20-character random lowercase string on first run.
+  The owner password. A user types this password in the Ares client to claim `Host` level access. Auto-generated as a 20-character random lowercase string when the GUI starts and no password is stored yet. Stored in the root registry key. Written by the **Owner password** text box.
 </ParamField>
 
 <ParamField path="adminannounce" type="bool" default="false">

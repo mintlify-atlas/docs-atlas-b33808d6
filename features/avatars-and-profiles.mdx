@@ -1,7 +1,7 @@
 ---
-title: "Avatars, Profiles, and Custom Fonts in sb0t"
+title: "Avatars, Personal Messages, and Custom Fonts in sb0t"
 sidebarTitle: "Avatars & Profiles"
-description: "How sb0t handles user avatars, personal messages, custom fonts, scribbles, and URL tags for Ares and web clients."
+description: "How sb0t tracks and synchronises user avatars, personal messages, custom fonts, scribbles, and URL tags for Ares desktop and web clients."
 ---
 
 Ares desktop clients carry a rich set of per-user profile data — a small avatar image, a personal status message, a custom font style, and more. sb0t tracks all of this state per connected user, synchronises it to joining clients, relays updates in real time, and exposes it for scripting. Web clients (ib0t) that negotiate extended protocol (`>= 2000`) receive the same profile data over WebSocket.

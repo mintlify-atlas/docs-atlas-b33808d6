@@ -1,5 +1,5 @@
 ---
-title: "Get Started with sb0t Ares Chat Server"
+title: "Set Up and Run Your First sb0t Ares Chat Room"
 sidebarTitle: "Quickstart"
 description: "Download, install, and launch your sb0t Ares chat room server. Covers first-run configuration, starting the server, and connecting with an Ares client."
 ---
@@ -17,11 +17,11 @@ Getting a room online with sb0t takes only a few minutes. The application is a s
   </Step>
 
   <Step title="Launch the application">
-    Double-click `sb0t.exe`. The WPF main window opens. On first run, sb0t calls `DoOnce.Run()`, which:
+    Double-click `sb0t.exe`. The WPF main window opens. On startup, `SetupValues()` runs in the GUI, which:
 
-    - Creates the registry key `HKCU\Software\sb0t\sb0t.exe` if it does not already exist.
-    - Writes default values for every setting that has not been set yet (for example, port `54321` and room name `my chatroom`).
-    - Creates the data directory `%AppData%\sb0t\<app-name>\` and writes the default web chat template to `%AppData%\sb0t\<app-name>\Style\template.htm`.
+    - Reads every setting from the registry, creating the key `HKCU\Software\sb0t\sb0t.exe` if it does not already exist.
+    - Writes default values for any setting not yet stored (for example, port `54321` and room name `my chatroom`).
+    - Generates and saves a random 20-character owner password if none has been set yet.
 
     The title bar shows the running version number (e.g., **sb0t 5.41**).
   </Step>
@@ -50,11 +50,11 @@ Getting a room online with sb0t takes only a few minutes. The application is a s
   <Step title="Click Start server">
     Click the **Start server** button. sb0t executes `ServerCore.Open()`, which:
 
-    1. Calls `Settings.Reset()` to reload all registry values and ensure the data directory exists.
+    1. Calls `Settings.Reset()` to reload cached registry values, invoke `DoOnce.Run()`, and ensure the `Style` data directory exists.
     2. Binds a `TcpListenerEx` to `0.0.0.0:<port>` and calls `Start()`.
     3. Binds a `UdpListener` to the address stored in `udp_address` on the same port and calls `Start()`.
     4. Logs **"Server initialized on port \<port\>"** to the GUI log and to `%AppData%\sb0t\<app-name>\serverlog.txt`.
-    5. Starts the server background thread, which loads bans, initialises the captcha manager, starts flood control, and fires `Events.ServerStarted()`.
+    5. Starts the server background thread, which runs filter import tasks, loads bans, initialises the captcha manager, resets flood control, and fires `Events.ServerStarted()`.
 
     If either listener fails to bind (for example, the port is already in use), an error dialog appears and the server does not start. Correct the port number and try again.
   </Step>
@@ -75,9 +75,9 @@ Getting a room online with sb0t takes only a few minutes. The application is a s
 
 ## First-Run Details
 
-On the very first launch (or whenever `do_once` is `0` in the registry), `DoOnce.Run()` seeds the data directory structure and writes a fresh `template.htm` for the ib0t web chat interface. If the template already exists and has become corrupted, it is backed up as `template.broken` before being replaced.
+Each time `ServerCore.Open()` is called, `Settings.Reset()` invokes `DoOnce.Run()`. When the registry value `do_once` is `0` (never been set), or when `%AppData%\sb0t\<app-name>\Style\template.htm` does not exist, `DoOnce.Run()` writes a fresh `template.htm` for the ib0t web chat interface. If the file already exists and must be replaced, it is first backed up as `template.broken`.
 
-The **owner password** field is auto-generated as a random 20-character lowercase string on first run and stored in the `owner` registry key. Record this value — it is the password used to claim Host-level access in the room via the Ares client.
+The **owner password** field is auto-generated as a random 20-character lowercase string when the GUI starts and no password is stored yet, then saved to the `owner` registry key. Record this value — it is the password used to claim Host-level access in the room via the Ares client.
 
 ## Data File Locations
 
@@ -89,7 +89,8 @@ All runtime data files are stored under:
 
 | Subfolder / file | Purpose |
 |---|---|
-| `serverlog.txt` | Timestamped server event log |
+| `serverlog.txt` | Timestamped server event and error log (always written) |
+| `ChatLogs\<day> <month> <year>.txt` | Daily public chat logs (written when **Chat logging** is enabled) |
 | `Style\template.htm` | ib0t web chat HTML template |
 | `Avatars\server` | Server avatar image (JPEG, 90×90) |
 | `Avatars\default` | Default user avatar image (JPEG, 90×90) |

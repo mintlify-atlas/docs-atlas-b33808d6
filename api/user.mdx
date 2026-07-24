@@ -1,7 +1,7 @@
 ---
-title: "User Object — sb0t JavaScript Scripting API"
+title: "User Object — sb0t JavaScript Scripting API Reference"
 sidebarTitle: "User"
-description: "API reference for the JSUser object in sb0t scripts. Read user properties, send messages, ban, redirect, and modify user state."
+description: "API reference for the JSUser object in sb0t scripts. Read user identity, send messages, ban, redirect, set levels, and modify user state."
 ---
 
 `User` objects are passed directly to event callbacks (such as `onUserJoin`, `onChat`, and so on) and are also returned by the global `user()` lookup helper. Each instance wraps an internal `IUser` record and exposes the complete user interface to scripts — from read-only identity fields to writable state toggles and action methods like banning, redirecting, and sending messages.
@@ -182,10 +182,6 @@ description: "API reference for the JSUser object in sb0t scripts. Read user pro
 
 <ParamField path="idle" type="bool">
   `true` if the user is currently marked as idle. **Read-only.**
-</ParamField>
-
-<ParamField path="quarantined" type="bool">
-  `true` if the user is in the quarantine holding area and has not yet been admitted to the room. **Read-only.**
 </ParamField>
 
 <ParamField path="linked" type="bool">

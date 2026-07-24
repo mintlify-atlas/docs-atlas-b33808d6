@@ -1,7 +1,7 @@
 ---
-title: "Timer — Scheduled Callbacks in sb0t Scripts"
+title: "Timer — Custom Scheduled Callbacks in sb0t Scripts"
 sidebarTitle: "Timer"
-description: "Use sb0t's Timer instance to run JavaScript callbacks on a fixed interval, separate from the built-in onTimer event."
+description: "API reference for sb0t's Timer instance. Schedule JavaScript callbacks on any custom interval, independent of the built-in onTimer event."
 ---
 
 Besides the global `onTimer` event handler — which fires once every second for every loaded script — sb0t provides a constructable `Timer` object that lets you run a JavaScript callback on a custom interval. Each `Timer` instance fires independently, making it easy to schedule multiple tasks at different rates without cluttering `onTimer` with manual counter logic.

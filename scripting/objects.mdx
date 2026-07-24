@@ -1,7 +1,7 @@
 ---
 title: "Static Script Objects: Room, Users, Link, and More"
 sidebarTitle: "Objects"
-description: "Reference for the static JavaScript objects available in every sb0t script: Room, Users, Link, Crypto, Stats, File, Channels, Base64, Zip, Registry, Hashlink, and Spelling."
+description: "Reference for all static JavaScript objects in every sb0t script: Room, Users, Link, Crypto, Stats, File, Base64, Zip, Registry, Hashlink, and Spelling."
 ---
 
 sb0t injects a collection of singleton objects into every script engine alongside the global functions. These objects expose server state and utilities as simple property/method APIs. They are available at any time — inside event handlers, `onTimer`, or top-level script code — with no import needed.
@@ -160,6 +160,7 @@ Leaf objects are passed to `onLeafJoin`, `onLeafPart`, `onLinkedAdminDisabled`, 
 | `leaf.user(name)` | Find a user on this leaf by name or name prefix. Returns `JSUser \| null`. |
 | `leaf.sendText(sender, text)` | Broadcast a public chat line to the leaf. |
 | `leaf.sendEmote(sender, text)` | Broadcast an emote line to the leaf. |
+| `leaf.scribble(image[, sender])` | Send a scribble image to all users on the leaf. `image` is a `JSScribbleImage`; `sender` defaults to `Room.botName`. |
 
 ```javascript
 function onLeafJoin(leaf) {
@@ -639,7 +640,7 @@ Timers fire once and then are removed from the queue. To create a repeating time
 | `user.leaf` | `JSLeaf \| null` | read-only | The leaf server this user belongs to, or `null` if local. |
 | `user.personalMessage` | `string` | read/write | The user's personal status message. |
 | `user.avatar` | `JSAvatarImage` | read/write | The user's current avatar image. |
-| `user.font` | `JSUserFont` | read-only | Font settings (`enabled`, `nameColor`, `textColor`, `family`). |
+| `user.font` | `JSUserFont` | read/write | Font settings (`enabled`, `nameColor`, `textColor`, `family`). Assigning a `JSUserFont` value copies all font properties. |
 | `user.ignores` | `JSIgnoreCollection` | read-only | The user's current ignore list. |
 
 ### Methods
@@ -657,6 +658,7 @@ Timers fire once and then are removed from the queue. To create a repeating time
 | `user.setUrl(addr, text)` | Send the room URL to this user. |
 | `user.restoreAvatar()` | Restore the user's avatar to their original. |
 | `user.getASN()` | Return the user's ASN (Autonomous System Number) as a number. |
+| `user.scribble(image[, sender])` | Send a scribble drawing to this user (custom clients only). `image` is a `JSScribbleImage`; optional `sender` string defaults to `Room.botName`. |
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: "Word Filter Configuration in sb0t"
+title: "Word Filter Configuration and Actions in sb0t Server"
 sidebarTitle: "Word Filter"
 description: "Configure sb0t's word filter to detect and respond to prohibited phrases in public chat and private messages, with wildcard and regex support."
 ---
@@ -126,13 +126,13 @@ Moderators, Administrators, and Hosts are never affected by filter triggers (exc
 
 Use the `#addwordfilter` command with a comma-separated argument list:
 
-```
+```text
 #addwordfilter <trigger>, <FilterType>[, <args>]
 ```
 
 Examples:
 
-```
+```text
 #addwordfilter spam, Muzzle
 #addwordfilter buy*now*, Ban
 #addwordfilter hello, Announce, Welcome to the room, +n!
@@ -179,7 +179,7 @@ The `<args>` element is required for every entry; leave it empty for actions tha
 
 ### Removing and Viewing Entries
 
-```
+```text
 #remwordfilter <index>     — remove entry at index
 #wordfilter               — list all current entries as: <index> - <trigger> [<type>]
 ```
@@ -188,7 +188,7 @@ The `<args>` element is required for every entry; leave it empty for actions tha
 
 Every triggered action that modifies or punishes a user is appended to `wordfilter.log.txt` in the server data path:
 
-```
+```text
 Alice banned for typing buy*now*
 Bob muzzled for typing spam
 Carol redirected for typing badurl.com in PM

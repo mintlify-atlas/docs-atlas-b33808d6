@@ -1,7 +1,7 @@
 ---
-title: "User Levels and Admin Accounts in sb0t"
+title: "User Levels and Admin Account Management in sb0t Server"
 sidebarTitle: "User Levels"
-description: "Understand sb0t's four user levels (Regular, Moderator, Administrator, Host) and how to set passwords for elevated access."
+description: "Understand sb0t's four user levels (Regular, Moderator, Administrator, Host) and how to manage password accounts and elevated access."
 ---
 
 Every user who connects to an sb0t room is assigned a level that controls what actions they can perform. Levels range from a plain chat participant all the way up to the room owner. Understanding this hierarchy is essential before configuring accounts, permissions, or scripts.
@@ -53,7 +53,7 @@ if (client.Level >= ILevel.Administrator)
 | Muzzle / unmuzzle users | ❌ | ✅† | ✅ | ✅ |
 | Kick / ban users | ❌ | ✅† | ✅ | ✅ |
 | Manage word filter | ❌ | ❌ | ✅ | ✅ |
-| Promote users | ❌ | ❌ | ✅ | ✅ |
+| Promote users via `/setlevel` | ❌ | ❌ | ❌ | ✅ (owner) |
 | Load / unload scripts | ❌ | ✅‡ | ✅‡ | ✅‡ |
 | Room owner commands | ❌ | ❌ | ❌ | ✅ (owner) |
 
@@ -77,7 +77,7 @@ The owner password is stored in the sb0t settings (registry key `owner`). Change
 
 Non-owner elevated accounts are stored in a SQLite database at:
 
-```
+```text
 %APPDATA%\sb0t\<room-name>\Dat\accounts.dat
 ```
 
@@ -96,10 +96,16 @@ Each row binds a display name, an `ILevel` value (0–3), the user's Ares GUID, 
 
 ### Registering an Account
 
-A user registers by sending the `/register <password>` command. The password must contain at least one letter and one digit:
+A user registers by sending the `/register <password>` command. The password must be at least 2 characters long and contain at least one letter and one digit:
 
 ```csharp
 // AccountManager.Register — validation excerpt
+if (password.Length < 2)
+{
+    Events.InvalidRegistration(client);
+    return;
+}
+
 int number_count = password.Count(Char.IsDigit);
 int letter_count = password.Count(Char.IsLetter);
 
@@ -110,11 +116,11 @@ if (number_count == 0 || letter_count == 0)
 }
 ```
 
-Newly registered accounts receive `ILevel.Regular`. An Administrator or Host must then promote the account through the GUI or a script.
+Newly registered accounts receive `ILevel.Regular`. The room **Owner** must then promote the account using the `/setlevel <user> <level>` command or through the server GUI.
 
 ### Promoting an Account
 
-After a user has registered and is online, an Administrator calls `AccountManager.UpdateAccount(admin, client)`. This writes the user's current `client.Level` back to the database so the elevated level persists across reconnections.
+After a user has registered and is online, the room **Owner** uses the `/setlevel <user> <level>` command (0–3). This sets `client.Level` to the requested level and calls `AccountManager.UpdateAccount(admin, client)`, which writes the new level back to the database so the elevated level persists across reconnections.
 
 ### Strict Mode
 

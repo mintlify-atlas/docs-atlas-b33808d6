@@ -1,5 +1,5 @@
 ---
-title: "Scripting Event Callbacks in sb0t"
+title: "sb0t Scripting: Event Callbacks Complete Reference"
 sidebarTitle: "Events"
 description: "Complete reference of every JavaScript event callback fired by sb0t: join, part, text, PM, commands, admin changes, linking, and timer events."
 ---
@@ -601,6 +601,18 @@ Fired when a linked user's admin privileges are revoked via the hub.
 
 <ParamField body="leaf" type="JSLeaf">The leaf the user belongs to.</ParamField>
 <ParamField body="user" type="JSUser">The user whose admin was disabled.</ParamField>
+
+---
+
+## Script lifecycle
+
+### `onLoad()`
+
+```javascript
+function onLoad() { }
+```
+
+Fired once when the script is first loaded (or reloaded). Use this to set up initial state, read configuration files, or print a startup message. This is the earliest point at which all static objects (`Room`, `Users`, `Stats`, etc.) and global functions are available.
 
 ---
 
